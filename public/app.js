@@ -1078,3 +1078,25 @@ setInterval(() => {
     renderMessages();
   }).catch(() => {});
 }, 20000);
+
+// --- Theme toggle (light/dark) ---------------------------------------------
+(function () {
+  var toggle = document.querySelector('#theme-toggle');
+  if (!toggle) return;
+  function syncLabel() {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    toggle.textContent = dark ? '\u2600\uFE0F Light' : '\uD83C\uDF19 Dark';
+    toggle.setAttribute('aria-pressed', dark ? 'true' : 'false');
+  }
+  syncLabel();
+  toggle.addEventListener('click', function () {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (dark) {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    try { localStorage.setItem('theme', dark ? 'light' : 'dark'); } catch (e) { /* ignore */ }
+    syncLabel();
+  });
+})();

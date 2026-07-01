@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Set up AI Secretary</title>
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
 </head>
 <body class="setup-body">
   <header class="hero setup-hero">
