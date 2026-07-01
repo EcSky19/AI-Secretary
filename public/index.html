@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Secretary — Schedule</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="auth-banner" class="auth-banner" role="alert" hidden>
+    <span>Authentication is required to load dashboard data. Reload the page and sign in with your admin credentials.</span>
+    <button type="button" id="dismiss-auth-banner" class="icon-button" aria-label="Dismiss authentication message">×</button>
+  </div>
+
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Reception desk</p>
+      <h1>AI Secretary — Schedule</h1>
+      <p class="subtitle">View the day, manage upcoming appointments, and keep up with caller messages.</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card schedule-card" aria-labelledby="schedule-title">
+      <div class="card-header">
+        <div>
+          <h2 id="schedule-title">Day view</h2>
+          <p id="schedule-summary" class="muted">Loading schedule…</p>
+        </div>
+        <label class="date-control">Date
+          <input id="schedule-date" type="date">
+        </label>
+      </div>
+      <div class="calendar-subscribe">
+        <a class="secondary calendar-link" href="/calendar.ics">Subscribe / Export Calendar</a>
+        <label>Subscription URL
+          <input id="calendar-url" type="text" readonly value="/calendar.ics">
+        </label>
+      </div>
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+      <div id="slots" class="slots" aria-live="polite"></div>
+    </section>
+
+    <aside class="card settings-card" aria-labelledby="settings-title">
+      <h2 id="settings-title">Settings</h2>
+      <form id="settings-form" class="form-stack">
+        <label>Appointment length (minutes)
+          <input id="appointment-length" type="number" min="1" step="1" required>
+        </label>
+        <div class="time-pair">
+          <label>Business start
+            <input id="business-start" type="time" required>
+          </label>
+          <label>Business end
+            <input id="business-end" type="time" required>
+          </label>
+        </div>
+        <fieldset class="settings-fieldset">
+          <legend>Open days</legend>
+          <div class="day-checkboxes">
+            <label><input type="checkbox" name="open-day" value="0"> Sun</label>
+            <label><input type="checkbox" name="open-day" value="1"> Mon</label>
+            <label><input type="checkbox" name="open-day" value="2"> Tue</label>
+            <label><input type="checkbox" name="open-day" value="3"> Wed</label>
+            <label><input type="checkbox" name="open-day" value="4"> Thu</label>
+            <label><input type="checkbox" name="open-day" value="5"> Fri</label>
+            <label><input type="checkbox" name="open-day" value="6"> Sat</label>
+          </div>
+        </fieldset>
+        <label>Blackout date
+          <div class="blackout-add">
+            <input id="blackout-date" type="date">
+            <button type="button" id="add-blackout-date" class="secondary">Add</button>
+          </div>
+        </label>
+        <div id="blackout-list" class="blackout-list" aria-live="polite"></div>
+        <label>Reminder lead time (minutes)
+          <input id="reminder-lead" type="number" min="1" step="1" required>
+        </label>
+        <button type="submit" class="primary full">Save settings</button>
+      </form>
+      <p class="hint">Changing length, hours, open days, or blackout dates refreshes the slot grid immediately.</p>
+    </aside>
+
+    <section class="card phone-card" aria-labelledby="phone-title">
+      <div class="card-header">
+        <div>
+          <h2 id="phone-title">Phone Number</h2>
+          <p class="muted">Register the client-facing Twilio number that routes calls to this AI secretary.</p>
+        </div>
+      </div>
+      <div id="phone-panel" class="phone-panel" aria-live="polite">
+        <div class="empty">Loading phone settings…</div>
+      </div>
+      <div id="phone-actions" class="phone-actions" hidden>
+        <div class="form-stack">
+          <div class="button-row phone-load-row">
+            <button type="button" id="load-phone-numbers" class="secondary">Load owned numbers</button>
+          </div>
+          <label>Owned Twilio numbers
+            <select id="phone-number-select">
+              <option value="">Load numbers to choose…</option>
+            </select>
+          </label>
+          <button type="button" id="register-phone-number" class="primary full">Register selected number</button>
+        </div>
+        <form id="available-phone-form" class="form-stack phone-search">
+          <h3>Search available numbers</h3>
+          <div class="time-pair">
+            <label>Area code
+              <input id="phone-area-code" inputmode="numeric" maxlength="10" placeholder="425">
+            </label>
+            <label>Contains
+              <input id="phone-contains" maxlength="20" placeholder="FLOWERS">
+            </label>
+          </div>
+          <button type="submit" class="secondary full">Search available numbers</button>
+        </form>
+        <div id="available-phone-results" class="stack-list"></div>
+      </div>
+    </section>
+
+    <section class="card upcoming-card" aria-labelledby="upcoming-title">
+      <div class="card-header">
+        <div>
+          <h2 id="upcoming-title">Upcoming appointments</h2>
+          <p class="muted">Booked visits from now forward.</p>
+        </div>
+      </div>
+      <div id="upcoming-list" class="stack-list" aria-live="polite"></div>
+    </section>
+
+    <section class="card messages-card" aria-labelledby="messages-title">
+      <div class="card-header">
+        <div>
+          <h2 id="messages-title">Messages inbox <span id="unread-count" class="badge">0 new</span></h2>
+          <p class="muted">Caller notes left for follow-up.</p>
+        </div>
+        <select id="message-filter" aria-label="Message filter">
+          <option value="all">All messages</option>
+          <option value="new">New only</option>
+          <option value="read">Read only</option>
+        </select>
+      </div>
+      <div id="messages-list" class="stack-list" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <dialog id="booking-dialog" class="booking-dialog">
+    <form id="booking-form" method="dialog" class="form-stack">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">New appointment</p>
+          <h2 id="booking-time">Book slot</h2>
+        </div>
+        <button type="button" id="close-dialog" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <input type="hidden" id="booking-start">
+      <label>Name
+        <input id="booking-name" autocomplete="name" required maxlength="100">
+      </label>
+      <label>Phone
+        <input id="booking-phone" autocomplete="tel" maxlength="40">
+      </label>
+      <label>Reason
+        <textarea id="booking-reason" rows="3" maxlength="300" placeholder="Brief reason for visit"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-booking" class="secondary">Cancel</button>
+        <button type="submit" class="primary">Book appointment</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reschedule-dialog" class="booking-dialog">
+    <form id="reschedule-form" method="dialog" class="form-stack">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Move appointment</p>
+          <h2 id="reschedule-title">Reschedule</h2>
+        </div>
+        <button type="button" id="close-reschedule" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <input type="hidden" id="reschedule-id">
+      <div class="time-pair">
+        <label>New date
+          <input id="reschedule-date" type="date" required>
+        </label>
+        <label>New time
+          <input id="reschedule-time" type="time" required>
+        </label>
+      </div>
+      <p class="hint">Choose a free wall-clock date and time. Conflicts will show suggested openings.</p>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-reschedule" class="secondary">Cancel</button>
+        <button type="submit" class="primary">Save new time</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

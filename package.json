@@ -1,0 +1,31 @@
+{
+  "name": "ai-secretary",
+  "version": "1.0.0",
+  "description": "AI secretary that answers phone calls, schedules and cancels appointments, with a web UI for viewing the schedule.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "seed": "node scripts/seed.js",
+    "register-number": "node scripts/register-number.js",
+    "config": "node scripts/print-config.js"
+  },
+  "keywords": [
+    "ai",
+    "secretary",
+    "twilio",
+    "appointments",
+    "scheduling"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "twilio": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

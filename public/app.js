@@ -1,0 +1,616 @@
+'use strict';
+
+const state = {
+  settings: null,
+  appointments: [],
+  availableSlots: [],
+  upcoming: [],
+  messages: [],
+  unreadCount: 0,
+  phone: null,
+  phoneNumbers: [],
+  availableNumbers: [],
+};
+
+const els = {
+  date: document.querySelector('#schedule-date'),
+  summary: document.querySelector('#schedule-summary'),
+  slots: document.querySelector('#slots'),
+  message: document.querySelector('#message'),
+  settingsForm: document.querySelector('#settings-form'),
+  length: document.querySelector('#appointment-length'),
+  businessStart: document.querySelector('#business-start'),
+  businessEnd: document.querySelector('#business-end'),
+  openDays: [...document.querySelectorAll('[name="open-day"]')],
+  blackoutDate: document.querySelector('#blackout-date'),
+  addBlackoutDate: document.querySelector('#add-blackout-date'),
+  blackoutList: document.querySelector('#blackout-list'),
+  reminderLead: document.querySelector('#reminder-lead'),
+  authBanner: document.querySelector('#auth-banner'),
+  dismissAuthBanner: document.querySelector('#dismiss-auth-banner'),
+  calendarUrl: document.querySelector('#calendar-url'),
+  dialog: document.querySelector('#booking-dialog'),
+  bookingForm: document.querySelector('#booking-form'),
+  bookingTime: document.querySelector('#booking-time'),
+  bookingStart: document.querySelector('#booking-start'),
+  bookingName: document.querySelector('#booking-name'),
+  bookingPhone: document.querySelector('#booking-phone'),
+  bookingReason: document.querySelector('#booking-reason'),
+  closeDialog: document.querySelector('#close-dialog'),
+  cancelBooking: document.querySelector('#cancel-booking'),
+  upcomingList: document.querySelector('#upcoming-list'),
+  messagesList: document.querySelector('#messages-list'),
+  unreadCount: document.querySelector('#unread-count'),
+  messageFilter: document.querySelector('#message-filter'),
+  rescheduleDialog: document.querySelector('#reschedule-dialog'),
+  rescheduleForm: document.querySelector('#reschedule-form'),
+  rescheduleTitle: document.querySelector('#reschedule-title'),
+  rescheduleId: document.querySelector('#reschedule-id'),
+  rescheduleDate: document.querySelector('#reschedule-date'),
+  rescheduleTime: document.querySelector('#reschedule-time'),
+  closeReschedule: document.querySelector('#close-reschedule'),
+  cancelReschedule: document.querySelector('#cancel-reschedule'),
+  phonePanel: document.querySelector('#phone-panel'),
+  phoneActions: document.querySelector('#phone-actions'),
+  loadPhoneNumbers: document.querySelector('#load-phone-numbers'),
+  phoneNumberSelect: document.querySelector('#phone-number-select'),
+  registerPhoneNumber: document.querySelector('#register-phone-number'),
+  availablePhoneForm: document.querySelector('#available-phone-form'),
+  phoneAreaCode: document.querySelector('#phone-area-code'),
+  phoneContains: document.querySelector('#phone-contains'),
+  availablePhoneResults: document.querySelector('#available-phone-results'),
+};
+
+function todayLocalDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function currentLocalStamp() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hour = String(d.getHours()).padStart(2, '0');
+  const minute = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day}T${hour}:${minute}`;
+}
+
+function toMinutes(time) {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function toTime(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function formatTime(time) {
+  const [hourRaw, minute] = time.split(':').map(Number);
+  const period = hourRaw >= 12 ? 'PM' : 'AM';
+  const hour = hourRaw % 12 || 12;
+  return `${hour}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
+function formatDate(date) {
+  const [year, month, day] = date.split('-');
+  return `${month}/${day}/${year}`;
+}
+
+function formatStamp(stamp) {
+  if (!stamp || !stamp.includes('T')) return '';
+  const [date, time] = stamp.split('T');
+  return `${formatDate(date)} ${formatTime(time)}`;
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>'"]/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[char]));
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) showAuthBanner();
+    const err = new Error(response.status === 401
+      ? 'Authentication required. Reload the page and sign in with your admin credentials.'
+      : (data.error || `Request failed (${response.status})`));
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function showAuthBanner() {
+  if (els.authBanner) els.authBanner.hidden = false;
+}
+
+function friendlyError(err) {
+  if (err.status === 409 && err.data && Array.isArray(err.data.nextAvailableSlots)) {
+    const options = err.data.nextAvailableSlots.slice(0, 3).map(slot => {
+      const stamp = typeof slot === 'string' ? slot : (slot.startStamp || slot.start_time || slot.start || '');
+      return formatStamp(stamp);
+    }).filter(Boolean);
+    return options.length ? `${err.message} Next openings: ${options.join(', ')}.` : err.message;
+  }
+  return err.message;
+}
+
+function showMessage(text, type = 'success') {
+  els.message.textContent = text;
+  els.message.className = `message show ${type}`;
+  clearTimeout(showMessage.timer);
+  showMessage.timer = setTimeout(() => { els.message.className = 'message'; }, 5000);
+}
+
+function dayBounds(date) {
+  return { from: `${date}T00:00`, to: `${date}T23:59` };
+}
+
+function generateSlots() {
+  const settings = state.settings;
+  const slots = [];
+  const start = toMinutes(settings.businessHoursStart);
+  const end = toMinutes(settings.businessHoursEnd);
+  const length = settings.appointmentLengthMinutes;
+  for (let t = start; t + length <= end; t += length) {
+    slots.push({ start: toTime(t), end: toTime(t + length), startStamp: `${els.date.value}T${toTime(t)}` });
+  }
+  return slots;
+}
+
+function openDayForSelectedDate() {
+  const openDays = Array.isArray(state.settings.openDays) ? state.settings.openDays : [];
+  if (!openDays.length) return true;
+  const [year, month, day] = els.date.value.split('-').map(Number);
+  return openDays.includes(new Date(year, month - 1, day).getDay());
+}
+
+function findAppointmentForSlot(slot) {
+  const slotEnd = `${els.date.value}T${slot.end}`;
+  return state.appointments.find(appt =>
+    appt.status === 'booked' && appt.start_time < slotEnd && appt.end_time > slot.startStamp
+  );
+}
+
+function renderSettings() {
+  els.length.value = state.settings.appointmentLengthMinutes;
+  els.businessStart.value = state.settings.businessHoursStart;
+  els.businessEnd.value = state.settings.businessHoursEnd;
+  els.reminderLead.value = state.settings.reminderLeadMinutes || 60;
+  const openDays = Array.isArray(state.settings.openDays) ? state.settings.openDays : [0, 1, 2, 3, 4, 5, 6];
+  els.openDays.forEach(input => { input.checked = openDays.includes(Number(input.value)); });
+  renderBlackoutDates();
+}
+
+function renderBlackoutDates() {
+  const dates = Array.isArray(state.settings.blackoutDates) ? state.settings.blackoutDates : [];
+  if (!dates.length) {
+    els.blackoutList.innerHTML = '<div class="empty compact">No blackout dates.</div>';
+    return;
+  }
+  els.blackoutList.innerHTML = dates.map(date => `
+    <div class="blackout-item">
+      <span>${escapeHtml(date)}</span>
+      <button type="button" class="danger" data-remove-blackout="${escapeHtml(date)}">Remove</button>
+    </div>
+  `).join('');
+}
+
+function renderSchedule() {
+  const slots = generateSlots();
+  const availableStarts = new Set(state.availableSlots.map(slot => slot.startStamp || `${slot.date}T${slot.start}`));
+  const visibleSlots = slots.filter(slot => findAppointmentForSlot(slot) || availableStarts.has(slot.startStamp));
+  const bookedCount = state.appointments.filter(a => a.status === 'booked').length;
+  els.summary.textContent = `${state.availableSlots.length} available slots • ${bookedCount} booked • ${state.settings.appointmentLengthMinutes} minute appointments`;
+  if (!visibleSlots.length) {
+    const blackoutDates = Array.isArray(state.settings.blackoutDates) ? state.settings.blackoutDates : [];
+    const closed = blackoutDates.includes(els.date.value) || !openDayForSelectedDate();
+    els.slots.innerHTML = `<div class="empty">${closed ? 'This date is closed.' : 'No bookable slots for this date.'}</div>`;
+    return;
+  }
+  els.slots.innerHTML = visibleSlots.map(slot => {
+    const appt = findAppointmentForSlot(slot);
+    if (appt) {
+      return `<article class="slot booked">
+        <div class="slot-time">${formatTime(slot.start)}<span class="slot-end">to ${formatTime(slot.end)}</span></div>
+        <div><div class="slot-title">${escapeHtml(appt.name)}</div>
+          <div class="slot-meta"><span>${escapeHtml(appt.reason) || 'No reason'}</span><span>${escapeHtml(appt.phone) || 'No phone'}</span></div></div>
+        <div class="button-row">
+          <button class="secondary" data-reschedule="${appt.id}">Reschedule</button>
+          <button class="danger" data-cancel="${appt.id}">Cancel</button>
+        </div>
+      </article>`;
+    }
+    return `<article class="slot">
+      <div class="slot-time">${formatTime(slot.start)}<span class="slot-end">to ${formatTime(slot.end)}</span></div>
+      <div><div class="slot-title">Available</div><div class="slot-meta">Ready for booking</div></div>
+      <button class="primary" data-book="${slot.startStamp}" data-label="${formatTime(slot.start)}">Book</button>
+    </article>`;
+  }).join('');
+}
+
+function renderUpcoming() {
+  if (!state.upcoming.length) {
+    els.upcomingList.innerHTML = '<div class="empty">No upcoming booked appointments.</div>';
+    return;
+  }
+  els.upcomingList.innerHTML = state.upcoming.map(appt => `
+    <article class="list-item appointment-item">
+      <div>
+        <div class="slot-title">${escapeHtml(formatStamp(appt.start_time))}</div>
+        <div class="slot-meta">
+          <span>${escapeHtml(appt.name)}</span>
+          <span>${escapeHtml(appt.phone) || 'No phone'}</span>
+        </div>
+        <p>${escapeHtml(appt.reason) || 'No reason provided'}</p>
+      </div>
+      <div class="button-row">
+        <button class="secondary" data-reschedule="${appt.id}">Reschedule</button>
+        <button class="danger" data-cancel="${appt.id}">Cancel</button>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderMessages() {
+  els.unreadCount.textContent = `${state.unreadCount} new`;
+  if (!state.messages.length) {
+    els.messagesList.innerHTML = '<div class="empty">No messages to show.</div>';
+    return;
+  }
+  els.messagesList.innerHTML = state.messages.map(message => {
+    const isNew = message.status === 'new';
+    return `
+      <article class="list-item message-item ${isNew ? 'unread' : ''}">
+        <div>
+          <div class="message-heading">
+            <span class="slot-title">${escapeHtml(message.caller_name) || 'Unknown caller'}</span>
+            ${isNew ? '<span class="badge">new</span>' : ''}
+          </div>
+          <div class="slot-meta">
+            <span>${escapeHtml(message.phone) || 'No phone'}</span>
+            <span>${escapeHtml(formatStamp(message.created_at ? message.created_at.slice(0, 16) : ''))}</span>
+          </div>
+          <p>${escapeHtml(message.body)}</p>
+        </div>
+        <div class="button-row">
+          <button class="secondary" data-message-status="${message.id}" data-status="${isNew ? 'read' : 'new'}">${isNew ? 'Mark read' : 'Mark new'}</button>
+          <button class="danger" data-message-delete="${message.id}">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderPhone() {
+  const phone = state.phone || {};
+  const activeNumber = phone.activeNumber || 'Not set';
+  const registeredLabel = phone.registered ? 'Registered' : 'Not registered';
+  const statusClass = phone.registered ? 'good' : 'warn';
+  const configuredNotice = phone.configured
+    ? ''
+    : '<div class="notice info">Twilio not configured. Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to your .env to enable phone calls.</div>';
+  const localhostNotice = phone.configured && phone.usingLocalhost
+    ? '<div class="notice warn">PUBLIC_BASE_URL is localhost, so clients cannot reach this webhook. Use a tunnel such as ngrok or set a public URL.</div>'
+    : '';
+  const registeredNotice = phone.configured
+    ? `<div class="notice ${statusClass}">Active number is ${registeredLabel.toLowerCase()}. Verify its Voice webhook matches the URL below.</div>`
+    : '';
+
+  els.phonePanel.innerHTML = `
+    <div class="phone-summary">
+      <div>
+        <div class="muted">Clients should call</div>
+        <div class="phone-number-display">${escapeHtml(activeNumber)}</div>
+      </div>
+      <div class="phone-detail"><strong>Voice webhook:</strong> ${escapeHtml(phone.webhookUrl || 'Not available')}</div>
+      ${phone.configured ? `<div><span class="badge">${escapeHtml(registeredLabel)}</span></div>` : ''}
+    </div>
+    ${configuredNotice}
+    ${localhostNotice}
+    ${registeredNotice}
+    ${phone.error ? `<div class="notice error">${escapeHtml(phone.error)}</div>` : ''}
+  `;
+  els.phoneActions.hidden = !phone.configured;
+}
+
+function renderOwnedPhoneNumbers() {
+  if (!state.phoneNumbers.length) {
+    els.phoneNumberSelect.innerHTML = '<option value="">No owned numbers found</option>';
+    return;
+  }
+  els.phoneNumberSelect.innerHTML = state.phoneNumbers.map(number => {
+    const label = `${number.phoneNumber || number.friendlyName || number.sid}${number.registered ? ' — registered' : ''}`;
+    return `<option value="${escapeHtml(number.sid)}">${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function renderAvailablePhoneNumbers() {
+  if (!state.availableNumbers.length) {
+    els.availablePhoneResults.innerHTML = '<div class="empty">No available numbers to show.</div>';
+    return;
+  }
+  els.availablePhoneResults.innerHTML = state.availableNumbers.map(number => `
+    <article class="list-item">
+      <div>
+        <div class="slot-title">${escapeHtml(number.phoneNumber)}</div>
+        <div class="slot-meta">
+          <span>${escapeHtml(number.friendlyName) || 'Twilio number'}</span>
+          <span>${escapeHtml([number.locality, number.region].filter(Boolean).join(', '))}</span>
+        </div>
+      </div>
+      <button class="primary" data-provision-phone="${escapeHtml(number.phoneNumber)}">Buy &amp; register</button>
+    </article>
+  `).join('');
+}
+
+async function loadAll() {
+  state.settings = await api('/api/settings');
+  renderSettings();
+  const { from, to } = dayBounds(els.date.value);
+  const [availability, appointments, upcoming, messages, unread, phone] = await Promise.all([
+    api(`/api/availability?date=${encodeURIComponent(els.date.value)}`),
+    api(`/api/appointments?status=booked&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+    api(`/api/appointments?status=booked&from=${encodeURIComponent(currentLocalStamp())}`),
+    api(`/api/messages?status=${encodeURIComponent(els.messageFilter.value || 'all')}`),
+    api('/api/messages/unread-count'),
+    api('/api/phone'),
+  ]);
+  state.availableSlots = availability;
+  state.appointments = appointments;
+  state.upcoming = upcoming;
+  state.messages = messages;
+  state.unreadCount = unread.count || 0;
+  state.phone = phone;
+  renderSchedule();
+  renderUpcoming();
+  renderMessages();
+  renderPhone();
+}
+
+function openBooking(startStamp, label) {
+  els.bookingStart.value = startStamp;
+  els.bookingTime.textContent = `Book ${label}`;
+  els.bookingName.value = '';
+  els.bookingPhone.value = '';
+  els.bookingReason.value = '';
+  els.dialog.showModal();
+  els.bookingName.focus();
+}
+
+function appointmentById(id) {
+  return [...state.appointments, ...state.upcoming].find(appt => String(appt.id) === String(id));
+}
+
+function openReschedule(id) {
+  const appt = appointmentById(id);
+  const start = appt ? appt.start_time : `${els.date.value}T09:00`;
+  const [date, time] = start.split('T');
+  els.rescheduleId.value = id;
+  els.rescheduleDate.value = date || els.date.value;
+  els.rescheduleTime.value = time || '';
+  els.rescheduleTitle.textContent = appt ? `Reschedule ${appt.name}` : 'Reschedule appointment';
+  els.rescheduleDialog.showModal();
+  els.rescheduleDate.focus();
+}
+
+async function cancelAppointment(id) {
+  if (!confirm('Cancel this appointment?')) return;
+  await api(`/api/appointments/${id}`, { method: 'DELETE' });
+  showMessage('Appointment cancelled.');
+  await loadAll();
+}
+
+async function updateMessageStatus(id, status) {
+  await api(`/api/messages/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+  showMessage(status === 'read' ? 'Message marked read.' : 'Message marked new.');
+  await loadAll();
+}
+
+async function deleteMessage(id) {
+  if (!confirm('Delete this message?')) return;
+  await api(`/api/messages/${id}`, { method: 'DELETE' });
+  showMessage('Message deleted.');
+  await loadAll();
+}
+
+async function loadOwnedPhoneNumbers() {
+  state.phoneNumbers = await api('/api/phone/numbers');
+  renderOwnedPhoneNumbers();
+  showMessage('Owned phone numbers loaded.');
+}
+
+async function registerSelectedPhoneNumber() {
+  const sid = els.phoneNumberSelect.value;
+  if (!sid) {
+    showMessage('Choose an owned phone number to register.', 'error');
+    return;
+  }
+  await api('/api/phone/register', {
+    method: 'POST',
+    body: JSON.stringify({ sid }),
+  });
+  showMessage('Phone number registered.');
+  await loadAll();
+  await loadOwnedPhoneNumbers();
+}
+
+async function searchAvailablePhoneNumbers() {
+  const params = new URLSearchParams({ country: 'US', limit: '10' });
+  if (els.phoneAreaCode.value.trim()) params.set('areaCode', els.phoneAreaCode.value.trim());
+  if (els.phoneContains.value.trim()) params.set('contains', els.phoneContains.value.trim());
+  state.availableNumbers = await api(`/api/phone/available?${params.toString()}`);
+  renderAvailablePhoneNumbers();
+}
+
+async function provisionPhoneNumber(phoneNumber) {
+  if (!confirm(`Buy ${phoneNumber} from Twilio and register it for incoming calls? This can incur Twilio charges.`)) return;
+  await api('/api/phone/provision', {
+    method: 'POST',
+    body: JSON.stringify({ phoneNumber }),
+  });
+  showMessage('Phone number purchased and registered.');
+  state.availableNumbers = [];
+  renderAvailablePhoneNumbers();
+  await loadAll();
+}
+
+els.date.addEventListener('change', () => loadAll().catch(err => showMessage(err.message, 'error')));
+els.settingsForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    state.settings = await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        appointmentLengthMinutes: Number(els.length.value),
+        businessHoursStart: els.businessStart.value,
+        businessHoursEnd: els.businessEnd.value,
+        openDays: els.openDays.filter(input => input.checked).map(input => Number(input.value)),
+        blackoutDates: Array.isArray(state.settings.blackoutDates) ? state.settings.blackoutDates : [],
+        reminderLeadMinutes: Number(els.reminderLead.value),
+      }),
+    });
+    showMessage('Settings saved.');
+    await loadAll();
+  } catch (err) {
+    showMessage(err.message, 'error');
+  }
+});
+
+els.addBlackoutDate.addEventListener('click', () => {
+  const date = els.blackoutDate.value;
+  if (!date) {
+    showMessage('Choose a blackout date to add.', 'error');
+    return;
+  }
+  const dates = new Set(Array.isArray(state.settings.blackoutDates) ? state.settings.blackoutDates : []);
+  dates.add(date);
+  state.settings.blackoutDates = [...dates].sort();
+  els.blackoutDate.value = '';
+  renderBlackoutDates();
+});
+
+els.blackoutList.addEventListener('click', event => {
+  const button = event.target.closest('[data-remove-blackout]');
+  if (!button) return;
+  state.settings.blackoutDates = (state.settings.blackoutDates || []).filter(date => date !== button.dataset.removeBlackout);
+  renderBlackoutDates();
+});
+
+els.slots.addEventListener('click', async event => {
+  const bookButton = event.target.closest('[data-book]');
+  const cancelButton = event.target.closest('[data-cancel]');
+  const rescheduleButton = event.target.closest('[data-reschedule]');
+  if (bookButton) openBooking(bookButton.dataset.book, bookButton.dataset.label);
+  if (rescheduleButton) openReschedule(rescheduleButton.dataset.reschedule);
+  if (cancelButton) {
+    try {
+      await cancelAppointment(cancelButton.dataset.cancel);
+    } catch (err) {
+      showMessage(friendlyError(err), 'error');
+    }
+  }
+});
+
+els.upcomingList.addEventListener('click', async event => {
+  const cancelButton = event.target.closest('[data-cancel]');
+  const rescheduleButton = event.target.closest('[data-reschedule]');
+  if (rescheduleButton) openReschedule(rescheduleButton.dataset.reschedule);
+  if (cancelButton) {
+    try {
+      await cancelAppointment(cancelButton.dataset.cancel);
+    } catch (err) {
+      showMessage(friendlyError(err), 'error');
+    }
+  }
+});
+
+els.messagesList.addEventListener('click', async event => {
+  const statusButton = event.target.closest('[data-message-status]');
+  const deleteButton = event.target.closest('[data-message-delete]');
+  try {
+    if (statusButton) await updateMessageStatus(statusButton.dataset.messageStatus, statusButton.dataset.status);
+    if (deleteButton) await deleteMessage(deleteButton.dataset.messageDelete);
+  } catch (err) {
+    showMessage(friendlyError(err), 'error');
+  }
+});
+
+els.loadPhoneNumbers.addEventListener('click', () => loadOwnedPhoneNumbers().catch(err => showMessage(friendlyError(err), 'error')));
+els.registerPhoneNumber.addEventListener('click', () => registerSelectedPhoneNumber().catch(err => showMessage(friendlyError(err), 'error')));
+els.availablePhoneForm.addEventListener('submit', event => {
+  event.preventDefault();
+  searchAvailablePhoneNumbers().catch(err => showMessage(friendlyError(err), 'error'));
+});
+els.availablePhoneResults.addEventListener('click', event => {
+  const button = event.target.closest('[data-provision-phone]');
+  if (button) provisionPhoneNumber(button.dataset.provisionPhone).catch(err => showMessage(friendlyError(err), 'error'));
+});
+
+els.bookingForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await api('/api/appointments', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: els.bookingName.value,
+        phone: els.bookingPhone.value,
+        reason: els.bookingReason.value,
+        start: els.bookingStart.value,
+      }),
+    });
+    els.dialog.close();
+    showMessage('Appointment booked.');
+    await loadAll();
+  } catch (err) {
+    showMessage(friendlyError(err), 'error');
+  }
+});
+els.closeDialog.addEventListener('click', () => els.dialog.close());
+els.cancelBooking.addEventListener('click', () => els.dialog.close());
+els.rescheduleForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await api(`/api/appointments/${els.rescheduleId.value}/reschedule`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        date: els.rescheduleDate.value,
+        time: els.rescheduleTime.value,
+      }),
+    });
+    els.rescheduleDialog.close();
+    showMessage('Appointment rescheduled.');
+    await loadAll();
+  } catch (err) {
+    showMessage(friendlyError(err), 'error');
+  }
+});
+els.closeReschedule.addEventListener('click', () => els.rescheduleDialog.close());
+els.cancelReschedule.addEventListener('click', () => els.rescheduleDialog.close());
+els.messageFilter.addEventListener('change', () => loadAll().catch(err => showMessage(friendlyError(err), 'error')));
+els.dismissAuthBanner.addEventListener('click', () => { els.authBanner.hidden = true; });
+
+els.calendarUrl.value = `${window.location.origin}/calendar.ics`;
+els.date.value = todayLocalDate();
+loadAll().catch(err => showMessage(friendlyError(err), 'error'));
+setInterval(() => {
+  api('/api/messages/unread-count').then(({ count }) => {
+    state.unreadCount = count || 0;
+    renderMessages();
+  }).catch(() => {});
+}, 20000);
