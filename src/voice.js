@@ -112,9 +112,15 @@ function complete(response, callSid, message) {
 }
 
 function askForInitial(response) {
+  // eslint-disable-next-line global-require
+  const businessName = require('./runtime-config').getBusinessName();
+  const intro =
+    businessName && businessName !== 'AI Secretary'
+      ? `Thank you for calling ${businessName}. I am the automated assistant.`
+      : 'Hello, I am the AI secretary.';
   gather(
     response,
-    'Hello, I am the AI secretary. You can book, cancel, or reschedule an appointment, ask what times are available, or leave a message. How can I help?'
+    `${intro} You can book, cancel, or reschedule an appointment, ask what times are available, or leave a message. How can I help?`
   );
 }
 

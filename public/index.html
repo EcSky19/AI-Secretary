@@ -33,6 +33,16 @@
       </div>
       <div class="calendar-subscribe">
         <a class="secondary calendar-link" href="/calendar.ics">Subscribe / Export Calendar</a>
+        <div class="csv-export">
+          <label>CSV records
+            <select id="export-status" aria-label="CSV export status">
+              <option value="all">All appointments</option>
+              <option value="booked">Booked only</option>
+              <option value="cancelled">Cancelled only</option>
+            </select>
+          </label>
+          <button type="button" id="export-csv" class="secondary">Export appointments (CSV)</button>
+        </div>
         <label>Subscription URL
           <input id="calendar-url" type="text" readonly value="/calendar.ics">
         </label>
@@ -91,7 +101,7 @@
         <button type="submit" class="secondary full">Save business name</button>
       </form>
       <form id="twilio-config-form" class="form-stack config-form">
-        <div id="twilio-status" class="notice info">Loading phone connection�</div>
+        <div id="twilio-status" class="notice info">Loading phone connection�</div>
         <label>Twilio Account SID
           <input id="twilio-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
         </label>
@@ -156,6 +166,21 @@
           <button type="submit" class="secondary full">Search available numbers</button>
         </form>
         <div id="available-phone-results" class="stack-list"></div>
+      </div>
+    </section>
+
+    <section class="card backups-card" aria-labelledby="backups-title">
+      <div class="card-header">
+        <div>
+          <h2 id="backups-title">Backups</h2>
+          <p class="muted">Backups protect your schedule. If this app runs in the cloud, keep them on a persistent disk.</p>
+        </div>
+        <button type="button" id="backup-now" class="primary">Back up now</button>
+      </div>
+      <div id="backup-message" class="message" role="status" aria-live="polite"></div>
+      <div id="backup-dir" class="notice info">Loading backup location…</div>
+      <div id="backup-list" class="stack-list backups-list" aria-live="polite">
+        <div class="empty">Loading backups…</div>
       </div>
     </section>
 

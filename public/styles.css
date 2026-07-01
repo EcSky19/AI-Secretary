@@ -65,7 +65,7 @@ h2 { margin-bottom: 4px; font-size: 1.25rem; }
   padding: 22px;
   backdrop-filter: blur(10px);
 }
-.upcoming-card, .messages-card { grid-column: 1 / -1; }
+.upcoming-card, .messages-card, .backups-card { grid-column: 1 / -1; }
 .phone-card { grid-column: 1 / -1; }
 .card-header {
   align-items: center;
@@ -111,7 +111,7 @@ input:focus, textarea:focus {
   border-radius: 16px;
   display: grid;
   gap: 12px;
-  grid-template-columns: auto minmax(220px, 1fr);
+  grid-template-columns: auto auto minmax(220px, 1fr);
   margin-bottom: 16px;
   padding: 12px;
 }
@@ -120,6 +120,12 @@ input:focus, textarea:focus {
   border-radius: 12px;
   font-weight: 800;
   padding: 10px 14px;
+}
+.csv-export {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(150px, 1fr) auto;
 }
 
 .slots { display: grid; gap: 10px; }
@@ -232,7 +238,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 .message.success { background: #dcfce7; color: var(--good); }
 .message.error { background: var(--danger-soft); color: var(--danger); }
 
-.phone-panel, .phone-actions { display: grid; gap: 14px; }
+.phone-panel, .phone-actions, .backups-list { display: grid; gap: 14px; }
 .phone-actions { margin-top: 16px; }
 .phone-summary {
   background: #f8fbff;
@@ -254,7 +260,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 .notice.warn { background: #fef3c7; color: #92400e; }
 .notice.good { background: #dcfce7; color: var(--good); }
 .notice.error { background: var(--danger-soft); color: var(--danger); }
-.phone-search {
+.phone-search, .backups-list {
   border-top: 1px solid var(--line);
   margin-top: 16px;
   padding-top: 16px;
@@ -283,7 +289,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
   .card-header, .slot, .list-item, .dialog-actions { grid-template-columns: 1fr; display: grid; }
   .slot button, .list-item button { width: 100%; }
   .button-row { display: grid; justify-content: stretch; }
-  .time-pair, .calendar-subscribe, .blackout-add { grid-template-columns: 1fr; }
+  .time-pair, .calendar-subscribe, .csv-export, .blackout-add { grid-template-columns: 1fr; }
 }
 
 .settings-divider {

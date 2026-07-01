@@ -6,6 +6,7 @@ const notify = require('./notify');
 const scheduling = require('./scheduling');
 const twilioNumbers = require('./twilio-numbers');
 const runtimeConfig = require('./runtime-config');
+const backups = require('./backups');
 
 const router = express.Router();
 
@@ -205,6 +206,32 @@ router.get('/appointments', asyncHandler((req, res) => {
   if (from) validateStamp(from, 'from');
   if (to) validateStamp(to, 'to');
   res.json(db.listAppointments({ status, from, to }));
+}));
+
+function csvCell(value) {
+  const s = value == null ? '' : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Export appointments as a CSV file so owners can keep their own records.
+router.get('/appointments/export.csv', asyncHandler((req, res) => {
+  const { from, to } = req.query;
+  const status = req.query.status || 'all';
+  if (status && !['booked', 'cancelled', 'all'].includes(status)) {
+    throw httpError(400, "status must be 'booked', 'cancelled', or 'all'.");
+  }
+  if (from) validateStamp(from, 'from');
+  if (to) validateStamp(to, 'to');
+
+  const rows = db.listAppointments({ status, from, to });
+  const header = ['id', 'name', 'phone', 'reason', 'start_time', 'end_time', 'status', 'created_at'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push(header.map((h) => csvCell(r[h])).join(','));
+  }
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', 'attachment; filename="appointments.csv"');
+  res.send(lines.join('\r\n') + '\r\n');
 }));
 
 router.post('/appointments', asyncHandler((req, res) => {
@@ -416,6 +443,23 @@ router.put('/config/admin-password', asyncHandler((req, res) => {
   const user = body.user !== undefined ? String(body.user).trim() || 'admin' : undefined;
   runtimeConfig.setAdminCredentials({ user, password });
   res.json({ ok: true });
+}));
+
+// --- Backups (authenticated) ----------------------------------------------
+
+router.get('/backups', asyncHandler((req, res) => {
+  const list = backups.listBackups().map(({ name, size, createdAt }) => ({ name, size, createdAt }));
+  res.json({ dir: backups.getBackupsDir(), backups: list });
+}));
+
+router.post('/backups', asyncHandler((req, res) => {
+  const result = backups.createBackup();
+  res.status(201).json({
+    ok: true,
+    name: require('path').basename(result.file),
+    size: result.size,
+    createdAt: result.createdAt,
+  });
 }));
 
 router.use((err, req, res, next) => {

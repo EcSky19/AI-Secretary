@@ -32,9 +32,27 @@ The setup wizard walks you through the business name, business hours, open days,
 
 For most owners, Twilio credentials, the admin password, business hours, open days, blackout dates, and reminder settings can be entered in the browser. Environment variables still exist for technical users who want fixed overrides, but they are not required for the normal Render setup.
 
+## Other cloud options
+
+Render is still the recommended path for most owners. The repository also includes starting configs for Fly.io and Railway.
+
+### Fly.io
+
+`fly.toml` is included. Before going live, set the Fly app name and region for your business and set `PUBLIC_BASE_URL` to the real Fly URL. The included volume named `secretary_data` mounts at `/data`, so the database can live at `/data/secretary.db`.
+
+### Railway
+
+`railway.json` is included. In Railway, add a volume mounted at `/data` and set:
+
+```text
+DATABASE_PATH=/data/secretary.db
+```
+
+Railway's public domain is auto-detected through `RAILWAY_PUBLIC_DOMAIN`, so most owners do not need to manually set `PUBLIC_BASE_URL` there.
+
 ## Data persistence and backups
 
-AI Secretary stores appointments, settings, messages, and setup status in a SQLite file. If that file is stored on an ephemeral host disk, the app may look fresh after a restart and your schedule can be lost.
+AI Secretary stores appointments, settings, messages, setup status, Twilio settings, and the admin password hash in a SQLite file. If that file is stored on an ephemeral host disk, the app may look fresh after a restart and your schedule can be lost.
 
 The included `render.yaml` sets:
 
@@ -44,7 +62,81 @@ DATABASE_PATH=/data/secretary.db
 
 and mounts a persistent Render disk at `/data`, so appointments survive deploys and restarts.
 
-Backups are still your responsibility. For a real business, regularly download or snapshot the Render disk, especially before large changes or moving hosts.
+### Automatic backups
+
+The app creates consistent SQLite backups with `VACUUM INTO`. Backups are stored in `<data dir>/backups` by default, or in `BACKUP_DIR` if you set one. On cloud hosts, make sure the backups folder is also on the persistent disk, not temporary storage.
+
+Useful backup settings:
+
+| Variable | Use |
+| --- | --- |
+| `BACKUPS_ENABLED` | Turn scheduled backups on or off. Default: `true`. |
+| `BACKUP_INTERVAL_HOURS` | Hours between automatic backups. Default: `24`. |
+| `BACKUP_KEEP` | Number of newest backups to keep. Default: `14`. |
+| `BACKUP_DIR` | Optional backup folder. Defaults to `<data dir>/backups`. |
+
+The dashboard has a Backups panel. Technical users can also use authenticated API endpoints:
+
+- `GET /api/backups` lists backup files.
+- `POST /api/backups` creates a backup now.
+
+Manual command-line backup:
+
+```powershell
+node scripts/backup.js
+```
+
+### Restore a backup
+
+Restoring overwrites the current database. Use this order:
+
+1. Stop the app.
+2. List backups if needed:
+
+   ```powershell
+   node scripts/restore.js
+   ```
+
+3. Restore the chosen file:
+
+   ```powershell
+   node scripts/restore.js secretary-YYYYMMDD-HHMMSS.db
+   ```
+
+4. Restart the app so it opens the restored database.
+
+For a real business, also keep host-level disk snapshots or downloaded copies before large changes or moving hosts.
+
+## Forgot admin password
+
+If the owner is locked out of the dashboard, a technical helper can reset the login directly in the same SQLite database:
+
+```powershell
+node scripts/reset-admin.js newpass1
+node scripts/reset-admin.js --user owner newpass1
+```
+
+Passwords must be at least 6 characters. Restart the app afterward if it is already running. These scripts are run directly with `node`; you can add npm aliases later if you prefer, but `package.json` is not required for them.
+
+## CSV appointment export
+
+The dashboard Export button downloads appointments as a spreadsheet-friendly CSV for record keeping. The authenticated endpoint is:
+
+```text
+GET /api/appointments/export.csv?status=all|booked|cancelled&from=&to=
+```
+
+Use `status`, `from`, and `to` to narrow the export before importing it into a spreadsheet.
+
+## Security defaults
+
+Security headers are always enabled. Rate limiting protects the public setup pages and Twilio voice webhook routes to reduce abuse. Keep these defaults unless a technical operator has a specific reason to change them:
+
+| Variable | Use |
+| --- | --- |
+| `RATE_LIMIT_ENABLED` | Enable rate limiting. Default: `true`. |
+| `RATE_LIMIT_WINDOW_MS` | Rate-limit window length. Default: `60000`. |
+| `RATE_LIMIT_MAX` | Requests allowed per window per client. Default: `120`. |
 
 ## Connecting your phone number
 
@@ -76,7 +168,7 @@ docker build -t ai-secretary .
 docker run --env-file .env -p 3000:3000 -v ai-secretary-data:/app/data ai-secretary
 ```
 
-The Docker image uses Node 22 and stores data in `/app/data`. Keep the volume so the database is not deleted.
+The Docker image uses Node 22 and stores data in `/app/data`. Keep the volume so the database and default backups folder are not deleted.
 
 ### Docker Compose
 
@@ -118,6 +210,8 @@ The browser setup wizard is the normal path. These variables are optional overri
 | `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_TOKEN` | Optional admin auth overrides. Usually created in the browser wizard. |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Optional AI model settings. Without OpenAI, the built-in rule-based fallback can still run. |
 | `TWILIO_VALIDATE_SIGNATURE` | Keep `true` in production. Use `false` only for local tunnel testing if needed. |
+| `BACKUPS_ENABLED`, `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP`, `BACKUP_DIR` | Automatic backup schedule, retention, and folder. |
+| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | Public route rate-limit controls. Keep defaults for production. |
 
 ## Troubleshooting
 
@@ -125,4 +219,5 @@ The browser setup wizard is the normal path. These variables are optional overri
 - **Calls are not answered:** confirm the app URL opens in a browser, the Twilio number is registered in the app, and Twilio's Voice webhook points to `/voice/incoming` on the public HTTPS site.
 - **The app warns about `usingLocalhost`:** the app thinks its public URL is localhost. That is okay for local testing, but real Twilio calls need a public HTTPS URL. On custom hosts, set `PUBLIC_BASE_URL`.
 - **Render deploy fails with SQLite or Node errors:** the app requires Node.js 22.5 or newer. The included Render config uses Docker with `node:22-slim` to satisfy this.
-- **Appointments disappeared:** restore from your latest disk backup. Then check that the host is using persistent disk storage, not temporary storage.
+- **Appointments disappeared:** stop the app, restore from your latest backup, restart, then check that the host is using persistent disk storage, not temporary storage.
+- **The owner forgot the admin password:** run `node scripts/reset-admin.js newpass1`, then restart the app.

@@ -51,6 +51,22 @@ const config = {
     leadMinutes: parseInt(process.env.REMINDER_LEAD_MINUTES, 10) || 60,
     pollSeconds: parseInt(process.env.REMINDER_POLL_SECONDS, 10) || 60,
   },
+
+  // Automatic database backups (protects the SQLite appointment data).
+  backups: {
+    enabled: process.env.BACKUPS_ENABLED !== 'false',
+    intervalHours: parseFloat(process.env.BACKUP_INTERVAL_HOURS) || 24,
+    keep: parseInt(process.env.BACKUP_KEEP, 10) || 14,
+    dir: process.env.BACKUP_DIR || '',
+  },
+
+  // Security hardening for public deployments.
+  security: {
+    // Rate limiting on public, unauthenticated routes (setup + voice webhooks).
+    rateLimitEnabled: process.env.RATE_LIMIT_ENABLED !== 'false',
+    rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
+    rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX, 10) || 120,
+  },
 };
 
 module.exports = config;

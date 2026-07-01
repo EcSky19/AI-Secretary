@@ -6,13 +6,15 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 
 - AI phone answering for real business calls.
 - Voice booking, rescheduling, cancelling, and message-taking.
-- Browser dashboard for appointments, settings, and messages.
+- Browser dashboard for appointments, settings, messages, backups, and CSV exports.
 - SMS confirmations, cancellation notices, and appointment reminders.
 - Open-days and blackout-date controls for days you are closed.
 - iCal calendar feed for Google, Apple, and Outlook calendars.
-- Admin login protection.
+- Admin login protection, plus a recovery script for forgotten passwords.
 - In-browser first-run setup wizard for business hours, login, Twilio, and phone number setup.
 - SQLite-backed schedule storage using built-in `node:sqlite`.
+- Automatic and manual database backups.
+- Security headers and rate limiting for public routes.
 - Rule-based conversation fallback when OpenAI is not configured.
 
 ## Deploy for a real business
@@ -21,7 +23,9 @@ For the easiest no-command-line setup, use the Render Blueprint included in this
 
 **Read [DEPLOYMENT.md](DEPLOYMENT.md), then follow “Fastest way (recommended): deploy to the cloud with Render.”**
 
-The short version is: connect this GitHub repo to Render, let Render read `render.yaml`, deploy, open the public URL, and complete the setup wizard in your browser. The Render config includes a persistent disk so appointments survive restarts.
+The short version is: connect this GitHub repo to Render, let Render read `render.yaml`, deploy, open the public URL, and complete the setup wizard in your browser. The Render config includes a persistent disk so appointments and backups survive restarts.
+
+Fly.io (`fly.toml`) and Railway (`railway.json`) configs are also included for technical users. Render remains the recommended path for most owners.
 
 ## Requirements for developers
 
@@ -67,18 +71,64 @@ Most owners can use the browser setup wizard instead of editing environment vari
 | `REMINDER_LEAD_MINUTES` | Default minutes before an appointment to send reminders. | `60` |
 | `REMINDER_POLL_SECONDS` | Reminder worker polling interval. | `60` |
 | `DATABASE_PATH` | SQLite database file path. Use persistent storage in production. | `./data/secretary.db` |
+| `BACKUPS_ENABLED` | Enable automatic database backups. | `true` |
+| `BACKUP_INTERVAL_HOURS` | Hours between automatic backups. | `24` |
+| `BACKUP_KEEP` | Number of newest backup files to keep. | `14` |
+| `BACKUP_DIR` | Backup folder. Defaults to `<data dir>/backups`. | blank |
+| `RATE_LIMIT_ENABLED` | Enable rate limiting on public setup and voice webhook routes. | `true` |
+| `RATE_LIMIT_WINDOW_MS` | Rate-limit window length. | `60000` |
+| `RATE_LIMIT_MAX` | Requests allowed per window per client. | `120` |
 
 ## Architecture
 
 - `server.js` creates the Express app, serves `public/`, and mounts routers.
 - `src/db.js` owns SQLite setup, settings, appointment CRUD, overlap checks, rescheduling, cancellation, and messages.
 - `src/scheduling.js` contains time helpers, speech formatting, and availability generation.
-- `src/api.js` exposes the REST API under `/api` for settings, appointments, availability, messages, and phone number registration.
+- `src/api.js` exposes the REST API under `/api` for settings, appointments, availability, messages, phone number registration, CSV export, and backups.
 - `src/voice.js` exposes Twilio Voice webhooks under `/voice`.
 - `src/notify.js` sends SMS notifications when Twilio SMS credentials are configured.
-- `public/` contains the browser UI for setup, schedule management, messages, phone number setup, and settings.
+- `src/backups.js` creates consistent SQLite snapshots with `VACUUM INTO` and restores selected backup files.
+- `src/runtime-config.js` stores owner-entered business, Twilio, and admin settings in the database.
+- `src/security.js` adds security headers and rate limiting.
+- `public/` contains the browser UI for setup, schedule management, messages, phone number setup, settings, backups, and exports.
 
 Times are stored as naive local wall-clock strings: `YYYY-MM-DDTHH:mm`.
+
+## Backups and restore
+
+AI Secretary stores appointments, messages, settings, Twilio setup, and the admin password hash in one SQLite database. Automatic backups make timestamped copies using SQLite `VACUUM INTO`, which creates consistent snapshots.
+
+- Backups are stored in `<data dir>/backups` by default, or in `BACKUP_DIR` when set.
+- Automatic backups use `BACKUPS_ENABLED`, `BACKUP_INTERVAL_HOURS`, and `BACKUP_KEEP`.
+- The dashboard has a Backups panel to view backups and create one manually.
+- Authenticated API endpoints: `GET /api/backups` lists backups and `POST /api/backups` creates one.
+- On cloud hosts, put both the database and backups folder on persistent disk storage.
+
+Manual backup:
+
+```powershell
+node scripts/backup.js
+```
+
+Restore from a backup:
+
+```powershell
+node scripts/restore.js
+node scripts/restore.js secretary-YYYYMMDD-HHMMSS.db
+```
+
+Run `node scripts/restore.js` without a file name to list available backups. To restore safely, stop the app, run the restore command, then restart the app. Restoring overwrites the current live database.
+
+## Admin lockout recovery
+
+If the owner forgets the dashboard password, run:
+
+```powershell
+node scripts/reset-admin.js newpass1
+node scripts/reset-admin.js --user owner newpass1
+```
+
+Passwords must be at least 6 characters. Restart the app afterward if it is already running. These scripts are run directly with `node` because `package.json` aliases are intentionally unchanged; technical users can add npm aliases if they want.
 
 ## Calendar subscription
 
@@ -90,13 +140,30 @@ http://localhost:3000/calendar.ics
 
 Use the dashboard's Subscribe / Export Calendar link, or paste the URL into Google, Apple, or Outlook calendar. If `ADMIN_TOKEN` is configured, use `/calendar.ics?token=<ADMIN_TOKEN>` for calendar apps that cannot send custom headers.
 
+## CSV export
+
+Owners can download appointment records from the dashboard Export button, or from this authenticated endpoint:
+
+```text
+GET /api/appointments/export.csv?status=all|booked|cancelled&from=&to=
+```
+
+Use it for record keeping or importing appointments into spreadsheets.
+
+## Security
+
+Security headers are always added to responses. Rate limiting protects the public setup and Twilio voice webhook routes with `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_MS`, and `RATE_LIMIT_MAX`. Keep the defaults unless you have a specific operational reason to change them.
+
 ## REST API reference
+
+Authenticated dashboard/API routes require the configured admin login or token when admin protection is active.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/settings` | Get business hours, appointment length, open days, blackout dates, and reminder lead time. |
 | `PUT` | `/api/settings` | Update `appointmentLengthMinutes`, `businessHoursStart`, `businessHoursEnd`, `openDays`, `blackoutDates`, and `reminderLeadMinutes`. |
 | `GET` | `/api/appointments?status=&from=&to=` | List appointments, optionally filtered by status and time range. |
+| `GET` | `/api/appointments/export.csv?status=all\|booked\|cancelled&from=&to=` | Download appointments as CSV. |
 | `POST` | `/api/appointments` | Book an appointment with `{ name, phone, reason, date, time }` or `{ name, start }`. |
 | `PATCH` | `/api/appointments/:id/reschedule` | Reschedule a booked appointment. |
 | `PATCH` | `/api/appointments/:id` | Alternate reschedule endpoint. |
@@ -113,6 +180,8 @@ Use the dashboard's Subscribe / Export Calendar link, or paste the URL into Goog
 | `POST` | `/api/phone/register` | Register an owned Twilio number. |
 | `GET` | `/api/phone/available?areaCode=415` | Search available Twilio numbers to buy. |
 | `POST` | `/api/phone/provision` | Buy and register a Twilio number. |
+| `GET` | `/api/backups` | List database backups. |
+| `POST` | `/api/backups` | Create a database backup now. |
 
 ## Phone number setup
 

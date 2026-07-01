@@ -12,6 +12,8 @@ const state = {
   setupStatus: null,
   phoneNumbers: [],
   availableNumbers: [],
+  backups: [],
+  backupDir: '',
 };
 
 const els = {
@@ -77,6 +79,12 @@ const els = {
   adminUser: document.querySelector('#admin-user'),
   adminPassword: document.querySelector('#admin-password'),
   adminPasswordConfirm: document.querySelector('#admin-password-confirm'),
+  exportStatus: document.querySelector('#export-status'),
+  exportCsv: document.querySelector('#export-csv'),
+  backupNow: document.querySelector('#backup-now'),
+  backupMessage: document.querySelector('#backup-message'),
+  backupDir: document.querySelector('#backup-dir'),
+  backupList: document.querySelector('#backup-list'),
 };
 
 function todayLocalDate() {
@@ -126,6 +134,19 @@ function formatStamp(stamp) {
   return `${formatDate(date)} ${formatTime(time)}`;
 }
 
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${size} bytes`;
+}
+
 function escapeHtml(value) {
   return String(value || '').replace(/[&<>'"]/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -150,6 +171,24 @@ async function api(path, options = {}) {
   return data;
 }
 
+async function apiBlob(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { ...(options.headers || {}) },
+    ...options,
+  });
+  if (!response.ok) {
+    if (response.status === 401) showAuthBanner();
+    const data = await response.json().catch(() => ({}));
+    const err = new Error(response.status === 401
+      ? 'Authentication required. Reload the page and sign in with your admin credentials.'
+      : (data.error || `Request failed (${response.status})`));
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+  return response.blob();
+}
+
 function showAuthBanner() {
   if (els.authBanner) els.authBanner.hidden = false;
 }
@@ -171,6 +210,10 @@ function showMessage(text, type = 'success') {
 
 function showConfigMessage(text, type = 'success') {
   showInlineMessage(els.configMessage, text, type);
+}
+
+function showBackupMessage(text, type = 'success') {
+  showInlineMessage(els.backupMessage, text, type);
 }
 
 function showInlineMessage(element, text, type = 'success') {
@@ -416,6 +459,41 @@ function renderAvailablePhoneNumbers() {
   `).join('');
 }
 
+function renderBackups() {
+  els.backupDir.textContent = state.backupDir
+    ? `Backup location: ${state.backupDir}`
+    : 'Backup location is not available yet.';
+  if (!state.backups.length) {
+    els.backupList.innerHTML = '<div class="empty">No backups yet. Use “Back up now” to save one.</div>';
+    return;
+  }
+  els.backupList.innerHTML = state.backups.map(backup => `
+    <article class="list-item backup-item">
+      <div>
+        <div class="slot-title">${escapeHtml(backup.name)}</div>
+        <div class="slot-meta">
+          <span>${escapeHtml(formatDateTime(backup.createdAt))}</span>
+          <span>${escapeHtml(formatFileSize(backup.size))}</span>
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderBackupsError(message) {
+  els.backupDir.className = 'notice error';
+  els.backupDir.textContent = message;
+  els.backupList.innerHTML = '<div class="empty">Backups could not be loaded.</div>';
+}
+
+async function loadBackups() {
+  const data = await api('/api/backups');
+  state.backupDir = data.dir || '';
+  state.backups = Array.isArray(data.backups) ? data.backups : [];
+  els.backupDir.className = 'notice info';
+  renderBackups();
+}
+
 async function loadAll() {
   state.config = await api('/api/config');
   renderConfig();
@@ -447,6 +525,11 @@ async function loadAll() {
   renderUpcoming();
   renderMessages();
   renderPhone();
+  try {
+    await loadBackups();
+  } catch (err) {
+    renderBackupsError(friendlyError(err));
+  }
 }
 
 function openBooking(startStamp, label) {
@@ -537,6 +620,38 @@ async function provisionPhoneNumber(phoneNumber) {
   state.availableNumbers = [];
   renderAvailablePhoneNumbers();
   await loadAll();
+}
+
+async function exportAppointmentsCsv() {
+  const params = new URLSearchParams({ status: els.exportStatus.value || 'all' });
+  els.exportCsv.disabled = true;
+  try {
+    const blob = await apiBlob(`/api/appointments/export.csv?${params.toString()}`, {
+      headers: { Accept: 'text/csv' },
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'appointments.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showMessage('Appointments CSV downloaded.');
+  } finally {
+    els.exportCsv.disabled = false;
+  }
+}
+
+async function createBackupNow() {
+  els.backupNow.disabled = true;
+  try {
+    await api('/api/backups', { method: 'POST' });
+    showBackupMessage('Backup saved.');
+    await loadBackups();
+  } finally {
+    els.backupNow.disabled = false;
+  }
 }
 
 async function saveBusinessConfig() {
@@ -691,6 +806,8 @@ els.messagesList.addEventListener('click', async event => {
 
 els.loadPhoneNumbers.addEventListener('click', () => loadOwnedPhoneNumbers().catch(err => showMessage(friendlyError(err), 'error')));
 els.registerPhoneNumber.addEventListener('click', () => registerSelectedPhoneNumber().catch(err => showMessage(friendlyError(err), 'error')));
+els.exportCsv.addEventListener('click', () => exportAppointmentsCsv().catch(err => showMessage(friendlyError(err), 'error')));
+els.backupNow.addEventListener('click', () => createBackupNow().catch(err => showBackupMessage(friendlyError(err), 'error')));
 els.availablePhoneForm.addEventListener('submit', event => {
   event.preventDefault();
   searchAvailablePhoneNumbers().catch(err => showMessage(friendlyError(err), 'error'));
