@@ -100,6 +100,13 @@
         </label>
         <button type="submit" class="secondary full">Save business name</button>
       </form>
+      <form id="voice-config-form" class="form-stack config-form">
+        <label>Assistant voice
+          <select id="assistant-voice" required></select>
+          <span id="assistant-voice-help" class="field-help">This natural voice is what callers hear when the assistant answers your phone. Changes apply to the next call.</span>
+        </label>
+        <button type="submit" id="save-assistant-voice" class="secondary full">Save assistant voice</button>
+      </form>
       <form id="recovery-phone-form" class="form-stack config-form">
         <label>Recovery phone (for password reset)
           <input id="recovery-phone" autocomplete="tel" placeholder="+15551234567">

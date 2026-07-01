@@ -115,6 +115,40 @@ function isPasswordEnvManaged() {
   return Boolean(config.admin.password);
 }
 
+// --- Assistant voice (Twilio text-to-speech) -------------------------------
+
+const DEFAULT_VOICE = 'Polly.Joanna-Neural';
+
+// Curated set of natural-sounding neural voices offered in the dashboard. The
+// key is the Twilio voice identifier; label/description are for humans.
+const VOICE_OPTIONS = [
+  { name: 'Polly.Joanna-Neural', label: 'Joanna — US English, female (recommended)' },
+  { name: 'Polly.Matthew-Neural', label: 'Matthew — US English, male' },
+  { name: 'Polly.Danielle-Neural', label: 'Danielle — US English, female' },
+  { name: 'Polly.Stephen-Neural', label: 'Stephen — US English, male' },
+  { name: 'Polly.Amy-Neural', label: 'Amy — British English, female' },
+  { name: 'Polly.Brian-Neural', label: 'Brian — British English, male' },
+  { name: 'Polly.Olivia-Neural', label: 'Olivia — Australian English, female' },
+];
+
+function getVoiceName() {
+  if (config.voice.name) return config.voice.name;
+  return db.getSetting('voice_name') || DEFAULT_VOICE;
+}
+
+function setVoiceName(name) {
+  db.setSetting('voice_name', String(name || '').trim());
+}
+
+function getVoiceOptions() {
+  return VOICE_OPTIONS.map((v) => ({ ...v }));
+}
+
+// True when the voice is pinned via environment variable.
+function isVoiceEnvManaged() {
+  return Boolean(config.voice.name);
+}
+
 // --- Twilio credentials ----------------------------------------------------
 
 function getTwilioCredentials() {
@@ -262,6 +296,10 @@ module.exports = {
   getEmailConfig,
   setEmailConfig,
   isEmailConfigured,
+  getVoiceName,
+  setVoiceName,
+  getVoiceOptions,
+  isVoiceEnvManaged,
   maskPhone,
   maskEmail,
   isPasswordEnvManaged,

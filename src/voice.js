@@ -29,6 +29,12 @@ function sendTwiml(res, response) {
   res.type('text/xml').send(response.toString());
 }
 
+function sayOptions() {
+  // eslint-disable-next-line global-require
+  const voice = require('./runtime-config').getVoiceName();
+  return voice ? { voice } : {};
+}
+
 function gather(response, prompt, action = '/respond') {
   const g = response.gather({
     input: 'speech',
@@ -37,12 +43,12 @@ function gather(response, prompt, action = '/respond') {
     speechTimeout: 'auto',
     timeout: 6,
   });
-  g.say(prompt);
+  g.say(sayOptions(), prompt);
   response.redirect({ method: 'POST' }, actionUrl('/reprompt'));
 }
 
 function sayAndHangup(response, message) {
-  response.say(message);
+  response.say(sayOptions(), message);
   response.hangup();
 }
 

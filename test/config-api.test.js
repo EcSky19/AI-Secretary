@@ -152,6 +152,30 @@ test('PUT /api/config/business updates business name', async () => {
   assert.equal(config.body.businessName, 'New Name');
 });
 
+test('PUT /api/config/voice sets the assistant voice and rejects bad input', async () => {
+  const config = await authedRequest('/api/config');
+  assert.equal(config.response.status, 200);
+  assert.equal(typeof config.body.voiceName, 'string');
+  assert.ok(Array.isArray(config.body.voiceOptions) && config.body.voiceOptions.length > 0);
+
+  const update = await authedRequest('/api/config/voice', {
+    method: 'PUT',
+    body: { voiceName: 'Polly.Matthew-Neural' },
+  });
+  assert.equal(update.response.status, 200);
+  assert.equal(update.body.ok, true);
+  assert.equal(update.body.voiceName, 'Polly.Matthew-Neural');
+
+  const after = await authedRequest('/api/config');
+  assert.equal(after.body.voiceName, 'Polly.Matthew-Neural');
+
+  const bad = await authedRequest('/api/config/voice', {
+    method: 'PUT',
+    body: { voiceName: 'bad voice!' },
+  });
+  assert.equal(bad.response.status, 400);
+});
+
 test('PUT /api/config/admin-password rejects too-short password', async () => {
   const { response, body } = await authedRequest('/api/config/admin-password', {
     method: 'PUT',

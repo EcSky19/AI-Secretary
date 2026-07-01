@@ -78,6 +78,13 @@ const config = {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '',
   },
+
+  // Voice used for the phone assistant's speech (Twilio text-to-speech). Defaults
+  // to a natural-sounding Amazon Polly Neural voice. Owners can change this from
+  // the dashboard; the environment variable takes precedence when set.
+  voice: {
+    name: process.env.VOICE_NAME || '',
+  },
 };
 
 module.exports = config;

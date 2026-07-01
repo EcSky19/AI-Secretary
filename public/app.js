@@ -67,6 +67,10 @@ const els = {
   pageTitle: document.querySelector('#page-title'),
   businessConfigForm: document.querySelector('#business-config-form'),
   configBusinessName: document.querySelector('#config-business-name'),
+  voiceConfigForm: document.querySelector('#voice-config-form'),
+  assistantVoice: document.querySelector('#assistant-voice'),
+  assistantVoiceHelp: document.querySelector('#assistant-voice-help'),
+  saveAssistantVoice: document.querySelector('#save-assistant-voice'),
   recoveryPhoneForm: document.querySelector('#recovery-phone-form'),
   recoveryPhone: document.querySelector('#recovery-phone'),
   recoveryEmailForm: document.querySelector('#recovery-email-form'),
@@ -298,6 +302,34 @@ function renderConfig() {
   if (els.dashboardTitle) els.dashboardTitle.textContent = `${businessName} - Schedule`;
   if (els.pageTitle) els.pageTitle.textContent = `${businessName} - Schedule`;
   if (els.configBusinessName) els.configBusinessName.value = businessName;
+  if (els.assistantVoice) {
+    const voiceOptions = Array.isArray(config.voiceOptions) ? config.voiceOptions : [];
+    const voiceName = config.voiceName || '';
+    const hasCurrentVoice = voiceOptions.some(option => option && option.name === voiceName);
+    const options = voiceOptions.map(option => `
+      <option value="${escapeHtml(option.name)}">${escapeHtml(option.label || option.name)}</option>
+    `);
+    if (voiceName && !hasCurrentVoice) {
+      options.unshift(`<option value="${escapeHtml(voiceName)}">${escapeHtml(voiceName)}</option>`);
+    }
+    els.assistantVoice.innerHTML = options.length
+      ? options.join('')
+      : '<option value="">No voices available</option>';
+    els.assistantVoice.value = voiceName;
+    els.assistantVoice.disabled = Boolean(config.voiceEnvManaged) || !voiceOptions.length;
+  }
+  if (els.saveAssistantVoice) {
+    const voiceOptions = Array.isArray(config.voiceOptions) ? config.voiceOptions : [];
+    els.saveAssistantVoice.disabled = Boolean(config.voiceEnvManaged) || !voiceOptions.length;
+  }
+  if (els.assistantVoiceHelp) {
+    const voiceOptions = Array.isArray(config.voiceOptions) ? config.voiceOptions : [];
+    const selected = voiceOptions.find(option => option && option.name === config.voiceName);
+    const selectedLabel = selected ? selected.label : config.voiceName;
+    els.assistantVoiceHelp.textContent = config.voiceEnvManaged
+      ? `${selectedLabel || 'The assistant voice'}. Set by your hosting configuration.`
+      : 'This natural voice is what callers hear when the assistant answers your phone. Changes apply to the next call.';
+  }
   if (els.recoveryPhone) els.recoveryPhone.value = config.recoveryPhone || '';
   if (els.recoveryEmail) els.recoveryEmail.value = config.recoveryEmail || '';
   if (els.adminUser) els.adminUser.value = config.adminUser || 'admin';
@@ -701,6 +733,16 @@ async function saveBusinessConfig() {
   await loadAll();
 }
 
+async function saveVoiceConfig() {
+  const result = await api('/api/config/voice', {
+    method: 'PUT',
+    body: JSON.stringify({ voiceName: els.assistantVoice.value }),
+  });
+  if (state.config) state.config.voiceName = result.voiceName || '';
+  showConfigMessage('Assistant voice saved.');
+  await loadAll();
+}
+
 async function saveRecoveryPhone() {
   const result = await api('/api/config/recovery-phone', {
     method: 'PUT',
@@ -951,6 +993,10 @@ els.dismissAuthBanner.addEventListener('click', () => { els.authBanner.hidden = 
 els.businessConfigForm.addEventListener('submit', event => {
   event.preventDefault();
   saveBusinessConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.voiceConfigForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveVoiceConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
 els.recoveryPhoneForm.addEventListener('submit', event => {
   event.preventDefault();

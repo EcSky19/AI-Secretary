@@ -398,6 +398,9 @@ router.get('/config', asyncHandler((req, res) => {
     recoveryPhone: runtimeConfig.getRecoveryPhone(),
     recoveryEmail: runtimeConfig.getRecoveryEmail(),
     emailConfigured: runtimeConfig.isEmailConfigured(),
+    voiceName: runtimeConfig.getVoiceName(),
+    voiceOptions: runtimeConfig.getVoiceOptions(),
+    voiceEnvManaged: runtimeConfig.isVoiceEnvManaged(),
     email: (() => {
       const e = runtimeConfig.getEmailConfig();
       // Never return the SMTP password; expose only whether one is set.
@@ -462,6 +465,17 @@ router.put('/config/recovery-phone', asyncHandler((req, res) => {
   }
   runtimeConfig.setRecoveryPhone(phone);
   res.json({ ok: true, recoveryPhone: runtimeConfig.getRecoveryPhone() });
+}));
+
+router.put('/config/voice', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  const name = String(body.voiceName || '').trim();
+  if (!name) throw httpError(400, 'voiceName is required.');
+  if (!/^[A-Za-z0-9][A-Za-z0-9.\-]{1,60}$/.test(name)) {
+    throw httpError(400, 'voiceName has an invalid format.');
+  }
+  runtimeConfig.setVoiceName(name);
+  res.json({ ok: true, voiceName: runtimeConfig.getVoiceName() });
 }));
 
 router.put('/config/recovery-email', asyncHandler((req, res) => {

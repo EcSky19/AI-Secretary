@@ -5,6 +5,7 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 ## What it does
 
 - AI phone answering for real business calls.
+- Natural-sounding neural assistant voice (Amazon Polly Neural), selectable in the dashboard.
 - Voice booking, rescheduling, cancelling, and message-taking.
 - Browser dashboard for appointments, settings, messages, backups, and CSV exports.
 - SMS confirmations, cancellation notices, and appointment reminders.
