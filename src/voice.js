@@ -5,9 +5,10 @@ const twilio = require('twilio');
 const config = require('./config');
 const db = require('./db');
 const scheduling = require('./scheduling');
+const runtimeConfig = require('./runtime-config');
+const tenancy = require('./tenancy');
 const { parseIntent } = require('./nlu');
 const { parseDateTime } = require('./datetime-parse');
-const { notifyRescheduled } = require('./notify');
 
 const { VoiceResponse } = twilio.twiml;
 const router = express.Router();
@@ -20,6 +21,54 @@ function callState(callSid, from) {
   return state;
 }
 
+function defaultTenantContext() {
+  const tenantId = tenancy.getDefaultTenantId();
+  const cfg = tenancy.getTenantConfig(tenantId);
+  return {
+    tenant: cfg?.tenant || null,
+    tenantId,
+    tenantNumber: cfg?.twilioPhoneNumber || runtimeConfig.getTenantFromNumber(tenantId) || '',
+    matched: Boolean(cfg?.tenant),
+    usedDefault: true,
+  };
+}
+
+function resolveTenantContext(req, state, { rejectUnmatchedTo = false } = {}) {
+  if (state?.tenantId) {
+    return {
+      tenant: state.tenant || null,
+      tenantId: state.tenantId,
+      tenantNumber: state.tenantNumber || runtimeConfig.getTenantFromNumber(state.tenantId) || '',
+      matched: true,
+      usedDefault: false,
+    };
+  }
+
+  const to = req?.body?.To;
+  if (to) {
+    const tenant = tenancy.resolveTenantByPhone(to);
+    if (tenant) {
+      return {
+        tenant,
+        tenantId: tenant.id,
+        tenantNumber: tenant.twilio_phone_number || tenancy.normalizeE164(to),
+        matched: true,
+        usedDefault: false,
+      };
+    }
+    if (rejectUnmatchedTo) return { tenant: null, tenantId: null, tenantNumber: tenancy.normalizeE164(to), matched: false };
+  }
+
+  return defaultTenantContext();
+}
+
+function attachTenantState(response, state, context) {
+  state.tenantId = context.tenantId;
+  state.tenant = context.tenant || state.tenant || null;
+  state.tenantNumber = context.tenantNumber || state.tenantNumber || '';
+  response.tenantId = state.tenantId;
+}
+
 function actionUrl(path) {
   if (config.publicBaseUrl) return `${config.publicBaseUrl.replace(/\/$/, '')}/voice${path}`;
   return `/voice${path}`;
@@ -29,9 +78,8 @@ function sendTwiml(res, response) {
   res.type('text/xml').send(response.toString());
 }
 
-function sayOptions() {
-  // eslint-disable-next-line global-require
-  const voice = require('./runtime-config').getVoiceName();
+function sayOptions(tenantId) {
+  const voice = runtimeConfig.getVoiceName(tenantId);
   return voice ? { voice } : {};
 }
 
@@ -74,13 +122,28 @@ function gather(response, prompt, action = '/respond') {
     speechTimeout: 'auto',
     timeout: 6,
   });
-  speak(g.say(sayOptions()), prompt);
+  speak(g.say(sayOptions(response.tenantId)), prompt);
   response.redirect({ method: 'POST' }, actionUrl('/reprompt'));
 }
 
 function sayAndHangup(response, message) {
-  speak(response.say(sayOptions()), message);
+  speak(response.say(sayOptions(response.tenantId)), message);
   response.hangup();
+}
+
+function hangupUnconfiguredNumber(response) {
+  response.tenantId = tenancy.getDefaultTenantId();
+  sayAndHangup(response, 'Sorry, this number is not configured yet. Please call again. Goodbye.');
+}
+
+function attachRequiredTenantState(response, state, req) {
+  const tenantContext = resolveTenantContext(req, state, { rejectUnmatchedTo: true });
+  if (!tenantContext.tenantId || tenantContext.usedDefault) {
+    hangupUnconfiguredNumber(response);
+    return false;
+  }
+  attachTenantState(response, state, tenantContext);
+  return true;
 }
 
 function slotSpeech(slot) {
@@ -91,9 +154,9 @@ function slotsPrompt(slots) {
   return slots.map((slot, i) => `Option ${i + 1}: ${slotSpeech(slot)}`).join('. ');
 }
 
-function slotFromDateTime(date, time) {
+function slotFromDateTime(date, time, tenantId) {
   if (!date || !time) return null;
-  const length = db.getSettings().appointmentLengthMinutes;
+  const length = db.getSettings(tenantId).appointmentLengthMinutes;
   const startStamp = scheduling.makeStamp(date, time);
   const end = scheduling.addMinutesToTime(time, length);
   return {
@@ -106,19 +169,110 @@ function slotFromDateTime(date, time) {
   };
 }
 
-function isUsableSlot(slot, excludeId) {
+function isUsableSlot(slot, excludeId, tenantId) {
   if (!slot) return false;
-  return slot.startStamp >= scheduling.nowStamp() && db.isSlotFree(slot.startStamp, slot.endStamp, excludeId);
+  return slot.startStamp >= scheduling.nowStamp() && db.isSlotFree(slot.startStamp, slot.endStamp, excludeId, tenantId);
 }
 
-function nearbySlots(date, count = 3) {
-  const settings = db.getSettings();
-  return scheduling.getNextAvailableSlots(
-    date || scheduling.todayDateStr(),
-    count,
-    21,
-    settings.appointmentLengthMinutes
-  );
+function getAvailableSlots(dateStr, tenantId, opts = {}) {
+  if (!db.isDateOpen(dateStr, tenantId)) return [];
+
+  const settings = db.getSettings(tenantId);
+  const length = opts.lengthMinutes || settings.appointmentLengthMinutes;
+  const startMin = scheduling.timeToMinutes(settings.businessHoursStart);
+  const endMin = scheduling.timeToMinutes(settings.businessHoursEnd);
+  const now = scheduling.nowStamp();
+  const slots = [];
+
+  for (let t = startMin; t + length <= endMin; t += length) {
+    const startTime = scheduling.minutesToTime(t);
+    const endTime = scheduling.minutesToTime(t + length);
+    const startStamp = scheduling.makeStamp(dateStr, startTime);
+    const endStamp = scheduling.makeStamp(dateStr, endTime);
+
+    if (startStamp < now) continue;
+    if (!db.isSlotFree(startStamp, endStamp, null, tenantId)) continue;
+
+    slots.push({
+      date: dateStr,
+      start: startTime,
+      end: endTime,
+      startStamp,
+      endStamp,
+      label: scheduling.formatTimeForSpeech(startTime),
+    });
+  }
+  return slots;
+}
+
+function getNextAvailableSlots(fromDateStr, tenantId, count = 3, daysAhead = 21, lengthMinutes) {
+  const results = [];
+  const [y, mo, d] = fromDateStr.split('-').map(Number);
+  const cursor = new Date(y, mo - 1, d);
+
+  for (let i = 0; i < daysAhead && results.length < count; i += 1) {
+    const dateStr = `${cursor.getFullYear()}-${scheduling.pad2(cursor.getMonth() + 1)}-${scheduling.pad2(
+      cursor.getDate()
+    )}`;
+    for (const slot of getAvailableSlots(dateStr, tenantId, { lengthMinutes })) {
+      results.push(slot);
+      if (results.length >= count) break;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return results;
+}
+
+function nearbySlots(date, tenantId, count = 3) {
+  const settings = db.getSettings(tenantId);
+  return getNextAvailableSlots(date || scheduling.todayDateStr(), tenantId, count, 21, settings.appointmentLengthMinutes);
+}
+
+function nluContext(state) {
+  const tenantConfig = tenancy.getTenantConfig(state.tenantId);
+  return {
+    ...state,
+    tenantId: state.tenantId,
+    tenantConfig,
+    businessName: tenantConfig?.businessName,
+    businessHours: tenantConfig
+      ? { start: tenantConfig.businessHoursStart, end: tenantConfig.businessHoursEnd }
+      : runtimeConfig.getBusinessHours(state.tenantId),
+    appointmentLengthMinutes: tenantConfig?.appointmentLengthMinutes,
+    openai: runtimeConfig.getOpenAiConfig(state.tenantId),
+    aiUnderstandingEnabled: runtimeConfig.isAiUnderstandingEnabled(state.tenantId),
+  };
+}
+
+function parseTenantIntent(speech, state) {
+  return parseIntent(speech, nluContext(state));
+}
+
+async function sendTenantSms(tenantId, to, body) {
+  const trimmedTo = String(to || '').trim();
+  if (!trimmedTo) return { sent: false, reason: 'no-recipient' };
+
+  const { accountSid, authToken } = runtimeConfig.getTwilioCredentials();
+  const from = runtimeConfig.getTenantFromNumber(tenantId);
+  if (!accountSid || !authToken || !accountSid.startsWith('AC') || !from) {
+    console.log(`[voice] (SMS disabled) would text ${trimmedTo}: ${body}`);
+    return { sent: false, reason: 'not-configured' };
+  }
+
+  try {
+    const client = twilio(accountSid, authToken);
+    const message = await client.messages.create({ to: trimmedTo, from, body });
+    return { sent: true, sid: message.sid };
+  } catch (err) {
+    console.error(`[voice] SMS to ${trimmedTo} failed:`, err.message);
+    return { sent: false, reason: err.message };
+  }
+}
+
+async function notifyTenantRescheduled(state, appointment, formatStamp) {
+  if (!appointment || !appointment.phone) return { sent: false, reason: 'no-phone' };
+  const when = formatStamp ? formatStamp(appointment.start_time) : appointment.start_time;
+  return sendTenantSms(state.tenantId, appointment.phone, `Your appointment has been moved to ${when}.`);
 }
 
 function parseOrdinal(text) {
@@ -149,8 +303,7 @@ function complete(response, callSid, message) {
 }
 
 function askForInitial(response) {
-  // eslint-disable-next-line global-require
-  const businessName = require('./runtime-config').getBusinessName();
+  const businessName = runtimeConfig.getBusinessName(response.tenantId);
   const intro =
     businessName && businessName !== 'AI Secretary'
       ? `Thank you for calling ${businessName}. I am the automated assistant.`
@@ -199,20 +352,25 @@ function handleBook(response, state, parsed) {
   }
 
   if (state.requestedDate && parsed.time) {
-    const slot = slotFromDateTime(state.requestedDate, parsed.time);
-    if (isUsableSlot(slot)) {
+    const slot = slotFromDateTime(state.requestedDate, parsed.time, state.tenantId);
+    if (isUsableSlot(slot, null, state.tenantId)) {
       state.pendingSlot = slot;
       if (!state.name) askForName(response, state);
       else askBookingConfirmation(response, state);
       return;
     }
-    offerSlots(response, state, 'Sorry, that time is not available. Here are the next openings.', nearbySlots(state.requestedDate));
+    offerSlots(
+      response,
+      state,
+      'Sorry, that time is not available. Here are the next openings.',
+      nearbySlots(state.requestedDate, state.tenantId)
+    );
     return;
   }
 
   const date = state.requestedDate || scheduling.todayDateStr();
-  const daySlots = scheduling.getAvailableSlots(date, {
-    lengthMinutes: db.getSettings().appointmentLengthMinutes,
+  const daySlots = getAvailableSlots(date, state.tenantId, {
+    lengthMinutes: db.getSettings(state.tenantId).appointmentLengthMinutes,
   });
   offerSlots(response, state, 'Here are available times.', daySlots.slice(0, 4));
 }
@@ -220,6 +378,7 @@ function handleBook(response, state, parsed) {
 function bookPending(response, state, callSid) {
   try {
     const appointment = db.bookAppointment({
+      tenantId: state.tenantId,
       name: state.name || 'Caller',
       phone: state.from || '',
       reason: 'Phone appointment',
@@ -235,7 +394,12 @@ function bookPending(response, state, callSid) {
     );
   } catch (err) {
     if (err && err.code === 'SLOT_TAKEN') {
-      offerSlots(response, state, 'Sorry, that slot was just taken. Here are other openings.', nearbySlots(state.pendingSlot.date));
+      offerSlots(
+        response,
+        state,
+        'Sorry, that slot was just taken. Here are other openings.',
+        nearbySlots(state.pendingSlot.date, state.tenantId)
+      );
       return;
     }
     throw err;
@@ -244,10 +408,10 @@ function bookPending(response, state, callSid) {
 
 function handleAvailability(response, state, parsed) {
   const date = parsed.date || scheduling.todayDateStr();
-  const slots = scheduling.getAvailableSlots(date, {
-    lengthMinutes: db.getSettings().appointmentLengthMinutes,
+  const slots = getAvailableSlots(date, state.tenantId, {
+    lengthMinutes: db.getSettings(state.tenantId).appointmentLengthMinutes,
   });
-  const available = slots.length ? slots.slice(0, 4) : nearbySlots(date, 4);
+  const available = slots.length ? slots.slice(0, 4) : nearbySlots(date, state.tenantId, 4);
   if (!available.length) {
     complete(response, state.callSid, 'I do not see available appointments soon. Please call again later. Goodbye.');
     return;
@@ -256,7 +420,7 @@ function handleAvailability(response, state, parsed) {
 }
 
 function handleCancel(response, state) {
-  const appointments = db.findAppointmentsByPhone(state.from || '', { upcomingOnly: true });
+  const appointments = db.findAppointmentsByPhone(state.from || '', { upcomingOnly: true, tenantId: state.tenantId });
   if (!appointments.length) {
     complete(response, state.callSid, 'I do not see any upcoming booked appointments for this phone number. Goodbye.');
     return;
@@ -319,7 +483,7 @@ function askRescheduleConfirmation(response, state) {
 }
 
 function handleReschedule(response, state) {
-  const appointments = db.findAppointmentsByPhone(state.from || '', { upcomingOnly: true });
+  const appointments = db.findAppointmentsByPhone(state.from || '', { upcomingOnly: true, tenantId: state.tenantId });
   if (!appointments.length) {
     complete(response, state.callSid, 'I do not see any upcoming booked appointments for this phone number. Goodbye.');
     return;
@@ -348,8 +512,8 @@ function handleRescheduleTime(response, state, parsed) {
   }
 
   if (state.requestedRescheduleDate && parsed.time) {
-    const slot = slotFromDateTime(state.requestedRescheduleDate, parsed.time);
-    if (isUsableSlot(slot, state.rescheduleId)) {
+    const slot = slotFromDateTime(state.requestedRescheduleDate, parsed.time, state.tenantId);
+    if (isUsableSlot(slot, state.rescheduleId, state.tenantId)) {
       state.pendingRescheduleSlot = slot;
       askRescheduleConfirmation(response, state);
       return;
@@ -358,14 +522,14 @@ function handleRescheduleTime(response, state, parsed) {
       response,
       state,
       'Sorry, that time is not available. Here are the next openings.',
-      nearbySlots(state.requestedRescheduleDate)
+      nearbySlots(state.requestedRescheduleDate, state.tenantId)
     );
     return;
   }
 
   const date = state.requestedRescheduleDate || scheduling.todayDateStr();
-  const daySlots = scheduling.getAvailableSlots(date, {
-    lengthMinutes: db.getSettings().appointmentLengthMinutes,
+  const daySlots = getAvailableSlots(date, state.tenantId, {
+    lengthMinutes: db.getSettings(state.tenantId).appointmentLengthMinutes,
   });
   offerRescheduleSlots(response, state, 'Here are available times.', daySlots.slice(0, 4));
 }
@@ -375,13 +539,14 @@ function reschedulePending(response, state, callSid) {
     const appointment = db.rescheduleAppointment(
       state.rescheduleId,
       state.pendingRescheduleSlot.startStamp,
-      state.pendingRescheduleSlot.endStamp
+      state.pendingRescheduleSlot.endStamp,
+      state.tenantId
     );
     if (!appointment) {
       complete(response, callSid, 'I could not find that booked appointment anymore. Please call again. Goodbye.');
       return;
     }
-    notifyRescheduled(appointment, scheduling.formatStampForSpeech).catch(() => {});
+    notifyTenantRescheduled(state, appointment, scheduling.formatStampForSpeech).catch(() => {});
     complete(
       response,
       callSid,
@@ -395,7 +560,7 @@ function reschedulePending(response, state, callSid) {
         response,
         state,
         'Sorry, that slot was just taken. Here are other openings.',
-        nearbySlots(state.pendingRescheduleSlot?.date)
+        nearbySlots(state.pendingRescheduleSlot?.date, state.tenantId)
       );
       return;
     }
@@ -410,6 +575,7 @@ function startMessageFlow(response, state) {
 
 function saveMessage(response, state, callSid, speech) {
   db.addMessage({
+    tenantId: state.tenantId,
     callerName: state.name || '',
     phone: state.from || '',
     body: speech,
@@ -422,6 +588,10 @@ async function processSpeech(req, res) {
   const callSid = req.body.CallSid || 'unknown-call';
   const state = callState(callSid, req.body.From);
   state.callSid = callSid;
+  if (!attachRequiredTenantState(response, state, req)) {
+    sendTwiml(res, response);
+    return;
+  }
   const speech = String(req.body.SpeechResult || '').trim();
 
   if (!speech) {
@@ -437,7 +607,7 @@ async function processSpeech(req, res) {
   state.retries = 0;
 
   if (state.flow === 'awaiting-name') {
-    const parsed = await parseIntent(speech, state);
+    const parsed = await parseTenantIntent(speech, state);
     state.name = parsed.name || speech.replace(/[^\p{L}\p{M} .'-]/gu, '').trim() || 'Caller';
     askBookingConfirmation(response, state);
     sendTwiml(res, response);
@@ -457,9 +627,10 @@ async function processSpeech(req, res) {
 
   if (state.flow === 'awaiting-slot-choice') {
     const choice = parseOrdinal(speech);
-    const parsed = await parseIntent(speech, state);
-    const chosen = state.offeredSlots?.[choice] || slotFromDateTime(parsed.date || state.requestedDate, parsed.time);
-    if (isUsableSlot(chosen)) {
+    const parsed = await parseTenantIntent(speech, state);
+    const chosen =
+      state.offeredSlots?.[choice] || slotFromDateTime(parsed.date || state.requestedDate, parsed.time, state.tenantId);
+    if (isUsableSlot(chosen, null, state.tenantId)) {
       state.pendingSlot = chosen;
       if (!state.name) askForName(response, state);
       else askBookingConfirmation(response, state);
@@ -469,7 +640,7 @@ async function processSpeech(req, res) {
   }
 
   if (state.flow === 'awaiting-book-time') {
-    const parsed = await parseIntent(speech, state);
+    const parsed = await parseTenantIntent(speech, state);
     if (!parsed.date && !parsed.time) {
       const dateTime = parseDateTime(speech);
       parsed.date = dateTime.date;
@@ -496,7 +667,7 @@ async function processSpeech(req, res) {
 
   if (state.flow === 'awaiting-cancel-confirmation') {
     if (isYes(speech)) {
-      const ok = db.cancelAppointment(state.pendingCancelId);
+      const ok = db.cancelAppointment(state.pendingCancelId, state.tenantId);
       complete(response, callSid, ok ? 'Your appointment has been cancelled. Goodbye.' : 'That appointment was already cancelled. Goodbye.');
     } else if (isNo(speech)) complete(response, callSid, 'Okay, I will leave your appointment as is. Goodbye.');
     else gather(response, 'Please say yes to cancel it, or no to keep it.');
@@ -517,7 +688,7 @@ async function processSpeech(req, res) {
   }
 
   if (state.flow === 'awaiting-reschedule-time') {
-    const parsed = await parseIntent(speech, state);
+    const parsed = await parseTenantIntent(speech, state);
     if (!parsed.date && !parsed.time) {
       const dateTime = parseDateTime(speech);
       parsed.date = dateTime.date;
@@ -530,9 +701,11 @@ async function processSpeech(req, res) {
 
   if (state.flow === 'awaiting-reschedule-slot-choice') {
     const choice = parseOrdinal(speech);
-    const parsed = await parseIntent(speech, state);
-    const chosen = state.offeredSlots?.[choice] || slotFromDateTime(parsed.date || state.requestedRescheduleDate, parsed.time);
-    if (isUsableSlot(chosen, state.rescheduleId)) {
+    const parsed = await parseTenantIntent(speech, state);
+    const chosen =
+      state.offeredSlots?.[choice] ||
+      slotFromDateTime(parsed.date || state.requestedRescheduleDate, parsed.time, state.tenantId);
+    if (isUsableSlot(chosen, state.rescheduleId, state.tenantId)) {
       state.pendingRescheduleSlot = chosen;
       askRescheduleConfirmation(response, state);
     } else gather(response, 'I could not match that to an available option. Please say option one, two, or three.');
@@ -557,7 +730,7 @@ async function processSpeech(req, res) {
     return;
   }
 
-  const parsed = await parseIntent(speech, state);
+  const parsed = await parseTenantIntent(speech, state);
   if (parsed.intent === 'book') handleBook(response, state, parsed);
   else if (parsed.intent === 'cancel') handleCancel(response, state);
   else if (parsed.intent === 'reschedule') handleReschedule(response, state);
@@ -577,6 +750,7 @@ function safe(handler) {
       await handler(req, res);
     } catch (_err) {
       const response = new VoiceResponse();
+      response.tenantId = tenancy.getDefaultTenantId();
       gather(response, 'I am sorry, something went wrong. Please try saying your request again.');
       sendTwiml(res, response);
     }
@@ -586,7 +760,15 @@ function safe(handler) {
 router.post(['/', '/incoming'], safe(async (req, res) => {
   const response = new VoiceResponse();
   const callSid = req.body.CallSid || 'unknown-call';
-  callState(callSid, req.body.From);
+  const state = callState(callSid, req.body.From);
+  const tenantContext = resolveTenantContext(req, state, { rejectUnmatchedTo: true });
+  if (!tenantContext.tenantId) {
+    response.tenantId = tenancy.getDefaultTenantId();
+    sayAndHangup(response, 'Sorry, this number is not configured yet. Goodbye.');
+    sendTwiml(res, response);
+    return;
+  }
+  attachTenantState(response, state, tenantContext);
   askForInitial(response);
   sendTwiml(res, response);
 }));
@@ -595,6 +777,10 @@ router.post('/respond', safe(processSpeech));
 router.post('/reprompt', safe(async (req, res) => {
   const response = new VoiceResponse();
   const state = callState(req.body.CallSid || 'unknown-call', req.body.From);
+  if (!attachRequiredTenantState(response, state, req)) {
+    sendTwiml(res, response);
+    return;
+  }
   if (resetForRetry(state)) askForInitial(response);
   else complete(response, req.body.CallSid || 'unknown-call', 'I did not receive a response. Please call again. Goodbye.');
   sendTwiml(res, response);

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up for AI Secretary</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+</head>
+<body class="setup-body">
+  <header class="hero setup-hero">
+    <div>
+      <p class="eyebrow">Self-serve setup</p>
+      <h1>Create your business account</h1>
+      <p class="subtitle">Sign up, choose a phone number, and manage your own schedule — no Twilio credentials required.</p>
+    </div>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">🌙 Dark</button>
+  </header>
+
+  <main class="setup-shell auth-shell">
+    <section class="card setup-step" aria-labelledby="signup-title">
+      <p class="eyebrow">Signup</p>
+      <h2 id="signup-title">Tell us about your business</h2>
+      <div id="auth-message" class="message" role="status" aria-live="polite"></div>
+      <form id="signup-form" class="form-stack">
+        <label>Business name
+          <input id="signup-business-name" autocomplete="organization" maxlength="120" required placeholder="Example Plumbing Co.">
+        </label>
+        <label>Email
+          <input id="signup-email" type="email" autocomplete="email" required placeholder="owner@example.com">
+        </label>
+        <label>Password
+          <input id="signup-password" type="password" autocomplete="new-password" minlength="6" required>
+          <span class="field-help">Use at least 6 characters.</span>
+        </label>
+        <label>Confirm password
+          <input id="signup-confirm" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <button type="submit" id="signup-submit" class="primary full">Create account</button>
+      </form>
+      <p class="hint">Already have an account? <a href="/login.html">Sign in</a>.</p>
+    </section>
+  </main>
+
+  <script src="/signup.js"></script>
+</body>
+</html>

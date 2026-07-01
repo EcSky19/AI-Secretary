@@ -20,6 +20,28 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 - Security headers and rate limiting for public routes.
 - Rule-based conversation fallback when OpenAI is not configured, so the phone line always works.
 
+## Multi-tenant: one deployment, many businesses
+
+This app is **multi-tenant SaaS**. Multiple businesses can sign up on a single
+deployment, and each tenant is fully isolated — its own login, appointments,
+messages, settings, assistant voice, and private iCal feed.
+
+- **Self-serve signup/login.** Businesses create an account (email + password)
+  and sign in; sessions are cookie-based. The dashboard and `/api` only ever
+  show the logged-in tenant's data.
+- **No Twilio setup for tenants.** The *platform operator* configures one master
+  Twilio account (`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`). Each tenant then
+  claims a dedicated phone number from the dashboard, which the app provisions
+  and points at itself automatically. Callers reach the right business because
+  incoming calls are routed by the dialed number.
+- **Auth is enforced in production.** `/api` requires a valid session whenever
+  any tenant has signed up, when `NODE_ENV=production`, or when
+  `AUTH_REQUIRED=true`. It stays open only on a fresh local/dev instance with no
+  signups.
+
+The operator supplies the platform Twilio credentials once (via environment
+variables); individual businesses never touch Twilio.
+
 ## Deploy for a real business
 
 For the easiest no-command-line setup, use the Render Blueprint included in this repo:

@@ -7,15 +7,10 @@ const db = require('./db');
 // ---------------------------------------------------------------------------
 // Runtime configuration
 //
-// Non-technical operators can't edit .env files, so sensitive/operational
-// settings (Twilio credentials, business profile, admin password) are stored in
-// the database and editable from the browser. Environment variables still take
-// precedence when present, so technical/hosted deployments can pin config via
-// env and skip the onboarding wizard entirely.
+// Settings are tenant-scoped. For backwards compatibility, every tenantId
+// parameter is optional and defaults to the migrated default tenant.
 // ---------------------------------------------------------------------------
 
-// Modules that cache a Twilio client register a reset callback so cached
-// clients are rebuilt when credentials change at runtime.
 const changeListeners = [];
 function onCredentialsChange(cb) {
   if (typeof cb === 'function') changeListeners.push(cb);
@@ -30,65 +25,98 @@ function notifyChange() {
   }
 }
 
+function tenantIdOrDefault(tenantId) {
+  return db.resolveTenantId(tenantId);
+}
+
 // --- Business profile ------------------------------------------------------
 
-function getBusinessName() {
-  return db.getSetting('business_name') || 'AI Secretary';
+function getBusinessName(tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  const tenant = db.getTenantById(id);
+  return (tenant && tenant.business_name) || db.getSetting(id, 'business_name') || 'AI Secretary';
 }
-function setBusinessName(name) {
-  db.setSetting('business_name', String(name || '').trim());
+function setBusinessName(name, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  const value = String(name || '').trim();
+  db.setSetting(id, 'business_name', value);
+  db.setTenantBusinessName(id, value);
+}
+
+function getBusinessHours(tenantId) {
+  const settings = db.getSettings(tenantIdOrDefault(tenantId));
+  return {
+    start: settings.businessHoursStart,
+    end: settings.businessHoursEnd,
+    appointmentLengthMinutes: settings.appointmentLengthMinutes,
+    openDays: settings.openDays,
+    blackoutDates: settings.blackoutDates,
+  };
+}
+function setBusinessHours({ start, end, appointmentLengthMinutes, openDays, blackoutDates } = {}, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  if (start !== undefined) db.setSetting(id, 'business_hours_start', String(start || '').trim());
+  if (end !== undefined) db.setSetting(id, 'business_hours_end', String(end || '').trim());
+  if (appointmentLengthMinutes !== undefined) {
+    db.setSetting(id, 'appointment_length_minutes', String(parseInt(appointmentLengthMinutes, 10) || 0));
+  }
+  if (openDays !== undefined) db.setSetting(id, 'open_days', Array.isArray(openDays) ? openDays.join(',') : String(openDays || ''));
+  if (blackoutDates !== undefined) {
+    db.setSetting(id, 'blackout_dates', Array.isArray(blackoutDates) ? blackoutDates.join(',') : String(blackoutDates || ''));
+  }
 }
 
 // --- Recovery phone (for password reset by SMS) ----------------------------
 
-function getRecoveryPhone() {
-  return db.getSetting('recovery_phone') || '';
+function getRecoveryPhone(tenantId) {
+  return db.getSetting(tenantIdOrDefault(tenantId), 'recovery_phone') || '';
 }
-function setRecoveryPhone(phone) {
-  db.setSetting('recovery_phone', String(phone || '').trim());
+function setRecoveryPhone(phone, tenantId) {
+  db.setSetting(tenantIdOrDefault(tenantId), 'recovery_phone', String(phone || '').trim());
 }
 
 // --- Recovery email (for password reset by email) --------------------------
 
-function getRecoveryEmail() {
-  return db.getSetting('recovery_email') || '';
+function getRecoveryEmail(tenantId) {
+  return db.getSetting(tenantIdOrDefault(tenantId), 'recovery_email') || '';
 }
-function setRecoveryEmail(email) {
-  db.setSetting('recovery_email', String(email || '').trim());
+function setRecoveryEmail(email, tenantId) {
+  db.setSetting(tenantIdOrDefault(tenantId), 'recovery_email', String(email || '').trim());
 }
 
 // --- Email / SMTP settings -------------------------------------------------
 
-function getEmailConfig() {
+function getEmailConfig(tenantId) {
+  const id = tenantIdOrDefault(tenantId);
   const env = config.email;
-  const port = env.port || parseInt(db.getSetting('smtp_port'), 10) || 0;
-  const secureSetting = db.getSetting('smtp_secure');
+  const port = env.port || parseInt(db.getSetting(id, 'smtp_port'), 10) || 0;
+  const secureSetting = db.getSetting(id, 'smtp_secure');
   return {
-    host: env.host || db.getSetting('smtp_host') || '',
+    host: env.host || db.getSetting(id, 'smtp_host') || '',
     port,
     secure: env.host ? env.secure : secureSetting === '1' || port === 465,
-    user: env.user || db.getSetting('smtp_user') || '',
-    pass: env.pass || db.getSetting('smtp_pass') || '',
-    from: env.from || db.getSetting('smtp_from') || '',
+    user: env.user || db.getSetting(id, 'smtp_user') || '',
+    pass: env.pass || db.getSetting(id, 'smtp_pass') || '',
+    from: env.from || db.getSetting(id, 'smtp_from') || '',
   };
 }
 
-function isEmailConfigured() {
-  const { host, from } = getEmailConfig();
+function isEmailConfigured(tenantId) {
+  const { host, from } = getEmailConfig(tenantId);
   return Boolean(host && from);
 }
 
-function setEmailConfig({ host, port, secure, user, pass, from } = {}) {
-  if (host !== undefined) db.setSetting('smtp_host', String(host || '').trim());
-  if (port !== undefined) db.setSetting('smtp_port', String(parseInt(port, 10) || 0));
-  if (secure !== undefined) db.setSetting('smtp_secure', secure ? '1' : '0');
-  if (user !== undefined) db.setSetting('smtp_user', String(user || '').trim());
-  if (pass !== undefined) db.setSetting('smtp_pass', String(pass || ''));
-  if (from !== undefined) db.setSetting('smtp_from', String(from || '').trim());
+function setEmailConfig({ host, port, secure, user, pass, from } = {}, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  if (host !== undefined) db.setSetting(id, 'smtp_host', String(host || '').trim());
+  if (port !== undefined) db.setSetting(id, 'smtp_port', String(parseInt(port, 10) || 0));
+  if (secure !== undefined) db.setSetting(id, 'smtp_secure', secure ? '1' : '0');
+  if (user !== undefined) db.setSetting(id, 'smtp_user', String(user || '').trim());
+  if (pass !== undefined) db.setSetting(id, 'smtp_pass', String(pass || ''));
+  if (from !== undefined) db.setSetting(id, 'smtp_from', String(from || '').trim());
   notifyChange();
 }
 
-// Mask a phone number for display, revealing only the last 4 digits.
 function maskPhone(phone) {
   const s = String(phone || '').trim();
   if (!s) return '';
@@ -98,7 +126,6 @@ function maskPhone(phone) {
   return `••• ••• ${last4}`;
 }
 
-// Mask an email address, revealing the first character and the domain.
 function maskEmail(email) {
   const s = String(email || '').trim();
   const at = s.indexOf('@');
@@ -109,8 +136,6 @@ function maskEmail(email) {
   return `${shown}${'•'.repeat(Math.max(1, name.length - 1))}${domain}`;
 }
 
-// True when the admin password is pinned via environment variable. In that case
-// a database-backed password reset would have no effect (env always wins).
 function isPasswordEnvManaged() {
   return Boolean(config.admin.password);
 }
@@ -119,8 +144,6 @@ function isPasswordEnvManaged() {
 
 const DEFAULT_VOICE = 'Polly.Joanna-Neural';
 
-// Curated set of natural-sounding neural voices offered in the dashboard. The
-// key is the Twilio voice identifier; label/description are for humans.
 const VOICE_OPTIONS = [
   { name: 'Polly.Joanna-Neural', label: 'Joanna — US English, female (recommended)' },
   { name: 'Polly.Matthew-Neural', label: 'Matthew — US English, male' },
@@ -131,20 +154,19 @@ const VOICE_OPTIONS = [
   { name: 'Polly.Olivia-Neural', label: 'Olivia — Australian English, female' },
 ];
 
-function getVoiceName() {
+function getVoiceName(tenantId) {
   if (config.voice.name) return config.voice.name;
-  return db.getSetting('voice_name') || DEFAULT_VOICE;
+  return db.getSetting(tenantIdOrDefault(tenantId), 'voice_name') || DEFAULT_VOICE;
 }
 
-function setVoiceName(name) {
-  db.setSetting('voice_name', String(name || '').trim());
+function setVoiceName(name, tenantId) {
+  db.setSetting(tenantIdOrDefault(tenantId), 'voice_name', String(name || '').trim());
 }
 
 function getVoiceOptions() {
   return VOICE_OPTIONS.map((v) => ({ ...v }));
 }
 
-// True when the voice is pinned via environment variable.
 function isVoiceEnvManaged() {
   return Boolean(config.voice.name);
 }
@@ -153,61 +175,68 @@ function isVoiceEnvManaged() {
 
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 
-// Merge env + DB for the OpenAI credentials that power natural-language route
-// understanding. Env vars win so hosted deploys can pin them; otherwise the
-// business owner can configure it from the dashboard.
-function getOpenAiConfig() {
+function getOpenAiConfig(tenantId) {
+  const id = tenantIdOrDefault(tenantId);
   return {
-    apiKey: config.openai.apiKey || db.getSetting('openai_api_key') || '',
-    model: process.env.OPENAI_MODEL || db.getSetting('openai_model') || DEFAULT_OPENAI_MODEL,
+    apiKey: config.openai.apiKey || db.getSetting(id, 'openai_api_key') || '',
+    model: process.env.OPENAI_MODEL || db.getSetting(id, 'openai_model') || DEFAULT_OPENAI_MODEL,
   };
 }
 
-// True when a usable OpenAI key is present (env or dashboard-configured).
-function isAiUnderstandingEnabled() {
-  return Boolean(getOpenAiConfig().apiKey);
+function isAiUnderstandingEnabled(tenantId) {
+  return Boolean(getOpenAiConfig(tenantId).apiKey);
 }
 
-// True when the key is pinned via environment variable (dashboard is read-only).
 function isOpenAiEnvManaged() {
   return Boolean(config.openai.apiKey);
 }
 
-function setOpenAiConfig({ apiKey, model } = {}) {
-  if (apiKey !== undefined) db.setSetting('openai_api_key', String(apiKey || '').trim());
-  if (model !== undefined) db.setSetting('openai_model', String(model || '').trim());
+function setOpenAiConfig({ apiKey, model } = {}, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  if (apiKey !== undefined) db.setSetting(id, 'openai_api_key', String(apiKey || '').trim());
+  if (model !== undefined) db.setSetting(id, 'openai_model', String(model || '').trim());
   notifyChange();
 }
 
 // --- Twilio credentials ----------------------------------------------------
 
-function getTwilioCredentials() {
+function getTenantFromNumber(tenantId) {
+  const tenant = db.getTenantById(tenantIdOrDefault(tenantId));
+  return (tenant && tenant.twilio_phone_number) || '';
+}
+
+function getTwilioCredentials(tenantId) {
+  const id = tenantIdOrDefault(tenantId);
   const env = config.twilio;
   return {
-    accountSid: env.accountSid || db.getSetting('twilio_account_sid') || '',
-    authToken: env.authToken || db.getSetting('twilio_auth_token') || '',
+    accountSid: env.accountSid || db.getSetting(id, 'twilio_account_sid') || '',
+    authToken: env.authToken || db.getSetting(id, 'twilio_auth_token') || '',
     phoneNumber:
       env.phoneNumber ||
-      db.getSetting('twilio_phone_number') ||
-      db.getSetting('client_phone_number') ||
+      getTenantFromNumber(id) ||
+      db.getSetting(id, 'twilio_phone_number') ||
+      db.getSetting(id, 'client_phone_number') ||
       '',
   };
 }
 
-function isTwilioConfigured() {
-  const { accountSid, authToken } = getTwilioCredentials();
+function isTwilioConfigured(tenantId) {
+  const { accountSid, authToken } = getTwilioCredentials(tenantId);
   return Boolean(accountSid && authToken && accountSid.startsWith('AC'));
 }
 
-function setTwilioCredentials({ accountSid, authToken, phoneNumber } = {}) {
-  if (accountSid !== undefined) db.setSetting('twilio_account_sid', String(accountSid || '').trim());
-  if (authToken !== undefined) db.setSetting('twilio_auth_token', String(authToken || '').trim());
-  if (phoneNumber !== undefined)
-    db.setSetting('twilio_phone_number', String(phoneNumber || '').trim());
+function setTwilioCredentials({ accountSid, authToken, phoneNumber } = {}, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  if (accountSid !== undefined) db.setSetting(id, 'twilio_account_sid', String(accountSid || '').trim());
+  if (authToken !== undefined) db.setSetting(id, 'twilio_auth_token', String(authToken || '').trim());
+  if (phoneNumber !== undefined) {
+    const value = String(phoneNumber || '').trim();
+    db.setSetting(id, 'twilio_phone_number', value);
+    db.assignTenantPhone(id, value || null);
+  }
   notifyChange();
 }
 
-// Verify a set of Twilio credentials by fetching the account over the API.
 async function testTwilioCredentials(creds) {
   const { accountSid, authToken } = creds && creds.accountSid ? creds : getTwilioCredentials();
   if (!accountSid || !authToken || !accountSid.startsWith('AC')) {
@@ -250,35 +279,48 @@ function verifyPasswordHash(pw, stored) {
   }
 }
 
-function getAdminUser() {
+function getAdminUser(tenantId) {
   if (config.admin.password) return config.admin.user;
-  return db.getSetting('admin_user') || config.admin.user || 'admin';
+  return db.getSetting(tenantIdOrDefault(tenantId), 'admin_user') || config.admin.user || 'admin';
 }
 
-function setAdminCredentials({ user, password }) {
-  if (user !== undefined) db.setSetting('admin_user', String(user || 'admin').trim() || 'admin');
-  if (password) db.setSetting('admin_password_hash', hashPassword(password));
+function setAdminCredentials({ user, password }, tenantId) {
+  const id = tenantIdOrDefault(tenantId);
+  const nextUser = String(user || 'admin').trim() || 'admin';
+  if (user !== undefined) db.setSetting(id, 'admin_user', nextUser);
+  if (password) db.setSetting(id, 'admin_password_hash', hashPassword(password));
 }
 
-function isAdminConfiguredViaDb() {
-  return Boolean(db.getSetting('admin_password_hash'));
+function isAdminConfiguredViaDb(tenantId) {
+  return Boolean(db.getSetting(tenantIdOrDefault(tenantId), 'admin_password_hash'));
 }
 
-// Whether any admin protection is active (env password/token or a DB password).
-function isAuthConfigured() {
-  return Boolean(config.admin.password || config.admin.token || isAdminConfiguredViaDb());
+function hasSignedUpTenants() {
+  // db.js does not expose a user count; tenant signups create non-default tenants.
+  return db.listTenants().some((tenant) => tenant.slug !== 'default');
 }
 
-// Verify HTTP Basic credentials against env (preferred) or the stored hash.
-function verifyAdminLogin(user, password) {
+function isAuthConfigured(tenantId) {
+  return Boolean(
+    config.admin.password ||
+    config.admin.token ||
+    isAdminConfiguredViaDb(tenantId) ||
+    hasSignedUpTenants() ||
+    process.env.NODE_ENV === 'production' ||
+    process.env.AUTH_REQUIRED === 'true'
+  );
+}
+
+function verifyAdminLogin(user, password, tenantId) {
   if (config.admin.password) {
     const uOk = safeEqual(user, config.admin.user);
     const pOk = safeEqual(password, config.admin.password);
     return uOk && pOk;
   }
-  const hash = db.getSetting('admin_password_hash');
+  const id = tenantIdOrDefault(tenantId);
+  const hash = db.getSetting(id, 'admin_password_hash');
   if (!hash) return false;
-  const expectedUser = db.getSetting('admin_user') || 'admin';
+  const expectedUser = db.getSetting(id, 'admin_user') || 'admin';
   return safeEqual(user, expectedUser) && verifyPasswordHash(password, hash);
 }
 
@@ -291,26 +333,26 @@ function safeEqual(a, b) {
 
 // --- Setup state -----------------------------------------------------------
 
-function isSetupComplete() {
-  // Env-configured deployments are considered already set up.
-  return db.getSetting('setup_complete') === '1' || Boolean(config.admin.password);
+function isSetupComplete(tenantId) {
+  return db.getSetting(tenantIdOrDefault(tenantId), 'setup_complete') === '1' || Boolean(config.admin.password);
 }
-function markSetupComplete() {
-  db.setSetting('setup_complete', '1');
+function markSetupComplete(tenantId) {
+  db.setSetting(tenantIdOrDefault(tenantId), 'setup_complete', '1');
 }
 
-function getSetupStatus() {
+function getSetupStatus(tenantId) {
+  const id = tenantIdOrDefault(tenantId);
   return {
-    setupComplete: isSetupComplete(),
-    businessName: getBusinessName(),
-    adminConfigured: isAuthConfigured(),
-    twilioConfigured: isTwilioConfigured(),
-    smsFromNumber: getTwilioCredentials().phoneNumber || '',
+    setupComplete: isSetupComplete(id),
+    businessName: getBusinessName(id),
+    adminConfigured: isAuthConfigured(id),
+    twilioConfigured: isTwilioConfigured(id),
+    smsFromNumber: getTwilioCredentials(id).phoneNumber || '',
     publicBaseUrl: config.publicBaseUrl,
     usingLocalhost: /localhost|127\.0\.0\.1/.test(config.publicBaseUrl || ''),
-    recoveryPhoneSet: Boolean(getRecoveryPhone()),
-    recoveryEmailSet: Boolean(getRecoveryEmail()),
-    emailConfigured: isEmailConfigured(),
+    recoveryPhoneSet: Boolean(getRecoveryPhone(id)),
+    recoveryEmailSet: Boolean(getRecoveryEmail(id)),
+    emailConfigured: isEmailConfigured(id),
     passwordEnvManaged: isPasswordEnvManaged(),
   };
 }
@@ -319,6 +361,8 @@ module.exports = {
   onCredentialsChange,
   getBusinessName,
   setBusinessName,
+  getBusinessHours,
+  setBusinessHours,
   getRecoveryPhone,
   setRecoveryPhone,
   getRecoveryEmail,
@@ -338,9 +382,12 @@ module.exports = {
   maskEmail,
   isPasswordEnvManaged,
   getTwilioCredentials,
+  getTenantFromNumber,
   isTwilioConfigured,
   setTwilioCredentials,
   testTwilioCredentials,
+  hashPassword,
+  verifyPasswordHash,
   getAdminUser,
   setAdminCredentials,
   isAdminConfiguredViaDb,

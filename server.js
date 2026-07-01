@@ -3,7 +3,7 @@
 const path = require('path');
 const express = require('express');
 const config = require('./src/config');
-const { adminAuth } = require('./src/auth');
+const { adminAuth, attachTenant } = require('./src/auth');
 const { verifyTwilio } = require('./src/twilio-verify');
 const reminders = require('./src/reminders');
 const backups = require('./src/backups');
@@ -25,10 +25,13 @@ const publicLimiter = rateLimit();
 // have onboarding fields silently dropped by form-parsing.
 app.use('/api/setup', publicLimiter, express.json({ type: () => true }), require('./src/setup'));
 
+app.use('/api', attachTenant);
+app.use('/api/auth', publicLimiter, require('./src/accounts-route'));
+
 app.use(express.urlencoded({ extended: false })); // Twilio posts urlencoded
 
 // iCal feed (served before static/auth so calendar clients can subscribe).
-app.use('/calendar.ics', require('./src/ical-route'));
+app.use(['/calendar.ics', '/calendar'], require('./src/ical-route'));
 
 // Static web UI
 app.use(express.static(path.join(__dirname, 'public')));

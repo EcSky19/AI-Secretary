@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in to AI Secretary</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+</head>
+<body class="setup-body">
+  <header class="hero setup-hero">
+    <div>
+      <p class="eyebrow">Welcome back</p>
+      <h1>Sign in to your AI Secretary</h1>
+      <p class="subtitle">Manage your business schedule, phone number, appointments, and messages.</p>
+    </div>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">🌙 Dark</button>
+  </header>
+
+  <main class="setup-shell auth-shell">
+    <section class="card setup-step" aria-labelledby="login-title">
+      <p class="eyebrow">Login</p>
+      <h2 id="login-title">Use your business login</h2>
+      <div id="auth-message" class="message" role="status" aria-live="polite"></div>
+      <form id="login-form" class="form-stack">
+        <label>Email
+          <input id="login-email" type="email" autocomplete="email" required placeholder="owner@example.com">
+        </label>
+        <label>Password
+          <input id="login-password" type="password" autocomplete="current-password" minlength="6" required>
+        </label>
+        <button type="submit" id="login-submit" class="primary full">Sign in</button>
+      </form>
+      <p class="hint">New business? <a href="/signup.html">Create an account</a>. Forgot your password? <a href="/forgot.html">Reset it</a>.</p>
+    </section>
+  </main>
+
+  <script src="/login.js"></script>
+</body>
+</html>

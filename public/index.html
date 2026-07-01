@@ -26,10 +26,13 @@
   <header class="hero">
     <div>
       <p class="eyebrow">Reception desk</p>
-      <h1>AI Secretary — Schedule</h1>
+      <h1 id="dashboard-title">AI Secretary — Schedule</h1>
       <p class="subtitle">View the day, manage upcoming appointments, and keep up with caller messages.</p>
     </div>
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">🌙 Dark</button>
+    <div class="hero-actions">
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">🌙 Dark</button>
+      <button type="button" id="logout-button" class="secondary">Log out</button>
+    </div>
   </header>
 
   <nav class="main-nav" aria-label="Primary">
@@ -185,25 +188,13 @@
       </details>
 
       <details class="settings-group">
-        <summary><span class="group-icon" aria-hidden="true">📞</span> Phone line (Twilio)</summary>
+        <summary><span class="group-icon" aria-hidden="true">📞</span> Phone line</summary>
         <div class="settings-group-body">
-          <form id="twilio-config-form" class="form-stack config-form">
+          <div class="form-stack config-form">
             <div id="twilio-status" class="notice info">Loading phone connection…</div>
-            <label>Twilio Account SID
-              <input id="twilio-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
-            </label>
-            <label>Twilio Auth Token
-              <input id="twilio-auth-token" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token">
-            </label>
-            <label>Twilio phone number
-              <input id="twilio-phone-number" autocomplete="tel" placeholder="+15551234567">
-            </label>
-            <div id="twilio-test-result" class="notice info" hidden></div>
-            <div class="button-row">
-              <button type="button" id="test-twilio-config" class="secondary">Test connection</button>
-              <button type="submit" class="primary">Save Twilio</button>
-            </div>
-          </form>
+            <p class="hint">Your business uses the platform phone system. Choose or register a customer-facing number below — no Twilio credentials are needed.</p>
+            <a class="secondary setup-link-button" href="#/settings" onclick="document.querySelector('.phone-card')?.setAttribute('open', ''); document.querySelector('#phone-title')?.scrollIntoView({ behavior: 'smooth' }); return false;">Manage phone number</a>
+          </div>
         </div>
       </details>
 
@@ -265,10 +256,10 @@
       </details>
 
       <details class="settings-group">
-        <summary><span class="group-icon" aria-hidden="true">🔒</span> Admin login</summary>
+        <summary><span class="group-icon" aria-hidden="true">🔒</span> Login</summary>
         <div class="settings-group-body">
           <form id="admin-password-form" class="form-stack config-form">
-            <label>Admin username
+            <label>Login email
               <input id="admin-user" autocomplete="username" required>
             </label>
             <label>New admin password
@@ -287,7 +278,7 @@
       <summary>
         <div class="summary-head">
           <h2 id="phone-title">Phone Number</h2>
-          <p class="muted">Register the client-facing Twilio number that routes calls to this AI secretary.</p>
+          <p class="muted">Get or assign the customer-facing number that routes calls to this AI secretary.</p>
         </div>
       </summary>
       <div class="card-body">
@@ -296,15 +287,12 @@
         </div>
         <div id="phone-actions" class="phone-actions" hidden>
           <div class="form-stack">
-            <div class="button-row phone-load-row">
-              <button type="button" id="load-phone-numbers" class="secondary">Load owned numbers</button>
-            </div>
-            <label>Owned Twilio numbers
-              <select id="phone-number-select">
-                <option value="">Load numbers to choose…</option>
-              </select>
+            <h3>Assign an existing platform number</h3>
+            <label>Phone number
+              <input id="owned-phone-number" autocomplete="tel" placeholder="+15551234567">
+              <span class="field-help">Use this only for a number already owned by the platform account.</span>
             </label>
-            <button type="button" id="register-phone-number" class="primary full">Register selected number</button>
+            <button type="button" id="register-phone-number" class="primary full">Assign this number</button>
           </div>
           <form id="available-phone-form" class="form-stack phone-search">
             <h3>Search available numbers</h3>
@@ -353,16 +341,20 @@
         </div>
         <dl class="account-grid">
           <div class="account-row"><dt>Business name</dt><dd id="account-business">—</dd></div>
-          <div class="account-row"><dt>Admin username</dt><dd id="account-admin">—</dd></div>
+          <div class="account-row"><dt>Login email</dt><dd id="account-admin">—</dd></div>
           <div class="account-row"><dt>Phone number</dt><dd id="account-phone">—</dd></div>
           <div class="account-row"><dt>Assistant voice</dt><dd id="account-voice">—</dd></div>
           <div class="account-row"><dt>AI understanding</dt><dd id="account-ai">—</dd></div>
+          <div class="account-row"><dt>Private calendar URL</dt><dd id="account-calendar">—</dd></div>
           <div class="account-row"><dt>Recovery phone</dt><dd id="account-recovery-phone">—</dd></div>
           <div class="account-row"><dt>Recovery email</dt><dd id="account-recovery-email">—</dd></div>
           <div class="account-row"><dt>Email for reset codes</dt><dd id="account-email">—</dd></div>
           <div class="account-row"><dt>Public URL</dt><dd id="account-url">—</dd></div>
         </dl>
-        <p class="hint">Need to change something? Head to <a href="#/settings">Settings</a>.</p>
+        <p class="button-row setup-final-actions">
+          <a class="secondary setup-link-button" href="#/settings">Settings</a>
+          <button type="button" id="account-logout-button" class="danger">Log out</button>
+        </p>
       </section>
     </section>
   </main>

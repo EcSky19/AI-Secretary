@@ -2,6 +2,25 @@
 
 AI Secretary is meant to run on a real public website so Twilio can send phone calls to it. The easiest path below uses Render and does not require command-line work or editing files.
 
+## How accounts and phone numbers work (multi-tenant)
+
+This is a multi-tenant app: one deployment serves many businesses, each fully
+isolated. There are two roles:
+
+- **Platform operator (you, who deploys this):** you connect ONE master Twilio
+  account via the `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` environment
+  variables. This account is used to buy/assign a phone number for each business
+  that signs up.
+- **Businesses (tenants):** they self-serve **sign up** with an email and
+  password, then claim a phone number from the dashboard. They never enter
+  Twilio credentials. Incoming calls are routed to the correct business by the
+  dialed number.
+
+Authentication is enforced automatically: `/api` requires a logged-in session
+whenever any business has signed up, when `NODE_ENV=production` (the default in
+the provided Docker/cloud configs), or when `AUTH_REQUIRED=true`. A brand-new
+local/dev instance with no signups stays open for convenience and tests.
+
 ## What you need first
 
 - A GitHub account and a copy of this repository in your GitHub account.
@@ -206,8 +225,8 @@ The browser setup wizard is the normal path. These variables are optional overri
 | --- | --- |
 | `DATABASE_PATH` | SQLite file location. Must be on persistent storage in production. |
 | `PUBLIC_BASE_URL` | Public HTTPS URL if your host cannot auto-detect it. |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Optional Twilio overrides. Usually entered in the browser wizard. |
-| `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_TOKEN` | Optional admin auth overrides. Usually created in the browser wizard. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | The PLATFORM (master) Twilio account used to provision a number for each tenant. `TWILIO_PHONE_NUMBER` is only a fallback for the default tenant. |
+| `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_TOKEN`, `AUTH_REQUIRED` | Optional operator back-compat auth mapped to the default tenant, plus `AUTH_REQUIRED=true` to force session auth on `/api`. Tenants normally sign up and log in instead. |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Optional AI model settings. Without OpenAI, the built-in rule-based fallback can still run. |
 | `TWILIO_VALIDATE_SIGNATURE` | Keep `true` in production. Use `false` only for local tunnel testing if needed. |
 | `BACKUPS_ENABLED`, `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP`, `BACKUP_DIR` | Automatic backup schedule, retention, and folder. |

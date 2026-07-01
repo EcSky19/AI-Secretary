@@ -46,11 +46,34 @@ function mapTwilioNumberError(err) {
     TWILIO_NOT_CONFIGURED: 503,
     INVALID_INPUT: 400,
     NUMBER_NOT_FOUND: 404,
+    NUMBER_ALREADY_ASSIGNED: 409,
+    TENANT_NOT_FOUND: 404,
+    NO_AVAILABLE_NUMBERS: 404,
   };
   if (err && Object.prototype.hasOwnProperty.call(statuses, err.code)) {
     throw httpError(statuses[err.code], err.message, { expose: true });
   }
   throw err;
+}
+
+function twilioResultStatus(result) {
+  const code = result && result.error && result.error.code;
+  const statuses = {
+    TWILIO_NOT_CONFIGURED: 503,
+    INVALID_INPUT: 400,
+    NUMBER_NOT_FOUND: 404,
+    NUMBER_ALREADY_ASSIGNED: 409,
+    TENANT_NOT_FOUND: 404,
+    NO_AVAILABLE_NUMBERS: 404,
+  };
+  return statuses[code] || 400;
+}
+
+function sendTwilioResult(res, result, successStatus = 200) {
+  if (result && result.ok === false) {
+    return res.status(twilioResultStatus(result)).json(result);
+  }
+  return res.status(successStatus).json(result);
 }
 
 function validateDate(dateStr, field = 'date') {
@@ -109,11 +132,79 @@ function parseAppointmentStart(body) {
   return scheduling.makeStamp(date, time);
 }
 
-function sendSlotTaken(res, startISO, lengthMinutes) {
+function tenantId(req) {
+  return req.tenantId || db.resolveDefaultTenantId();
+}
+
+function getAvailableSlotsForTenant(dateStr, opts = {}, id) {
+  if (!db.isDateOpen(dateStr, id)) return [];
+
+  const settings = db.getSettings(id);
+  const length = opts.lengthMinutes || settings.appointmentLengthMinutes;
+  const startMin = scheduling.timeToMinutes(settings.businessHoursStart);
+  const endMin = scheduling.timeToMinutes(settings.businessHoursEnd);
+  const now = scheduling.nowStamp();
+
+  const slots = [];
+  for (let t = startMin; t + length <= endMin; t += length) {
+    const startTime = scheduling.minutesToTime(t);
+    const endTime = scheduling.minutesToTime(t + length);
+    const startStamp = scheduling.makeStamp(dateStr, startTime);
+    const endStamp = scheduling.makeStamp(dateStr, endTime);
+
+    if (startStamp < now) continue;
+    if (!db.isSlotFree(startStamp, endStamp, null, id)) continue;
+
+    slots.push({
+      date: dateStr,
+      start: startTime,
+      end: endTime,
+      startStamp,
+      endStamp,
+      label: scheduling.formatTimeForSpeech(startTime),
+    });
+  }
+  return slots;
+}
+
+function getNextAvailableSlotsForTenant(fromDateStr, count, daysAhead, lengthMinutes, id) {
+  const results = [];
+  const [y, mo, d] = fromDateStr.split('-').map(Number);
+  const cursor = new Date(y, mo - 1, d);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  for (let i = 0; i < daysAhead && results.length < count; i += 1) {
+    const dateStr = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
+    const daySlots = getAvailableSlotsForTenant(dateStr, { lengthMinutes }, id);
+    for (const slot of daySlots) {
+      results.push(slot);
+      if (results.length >= count) break;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return results;
+}
+
+function getCalendarToken(id) {
+  let token = db.getSetting(id, 'calendar_token');
+  if (!token) {
+    token = crypto.randomBytes(32).toString('base64url');
+    db.setSetting(id, 'calendar_token', token);
+  }
+  return token;
+}
+
+function buildCalendarUrl(req, token) {
+  const base = (config.publicBaseUrl || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  return `${base}/calendar.ics?t=${encodeURIComponent(token)}`;
+}
+
+
+function sendSlotTaken(res, startISO, lengthMinutes, id) {
   const date = startISO.slice(0, 10);
   res.status(409).json({
     error: 'That slot is already taken. Please choose another appointment time.',
-    nextAvailableSlots: scheduling.getNextAvailableSlots(date, 5, 14, lengthMinutes),
+    nextAvailableSlots: getNextAvailableSlotsForTenant(date, 5, 14, lengthMinutes, id),
   });
 }
 
@@ -125,12 +216,13 @@ function validateMessageStatus(status) {
 }
 
 router.get('/settings', asyncHandler((req, res) => {
-  res.json(db.getSettings());
+  res.json(db.getSettings(tenantId(req)));
 }));
 
 router.put('/settings', asyncHandler((req, res) => {
   const body = requireBody(req);
-  const current = db.getSettings();
+  const id = tenantId(req);
+  const current = db.getSettings(id);
   const next = { ...current };
 
   if (Object.prototype.hasOwnProperty.call(body, 'appointmentLengthMinutes')) {
@@ -171,7 +263,7 @@ router.put('/settings', asyncHandler((req, res) => {
       }
     }
     const unique = [...new Set(days)].sort((a, b) => a - b);
-    db.setSetting('open_days', unique.join(','));
+    db.setSetting(id, 'open_days', unique.join(','));
   }
 
   // Blackout dates: array (or comma-separated string) of YYYY-MM-DD.
@@ -186,16 +278,16 @@ router.put('/settings', asyncHandler((req, res) => {
       }
     }
     const unique = [...new Set(dates)].sort();
-    db.setSetting('blackout_dates', unique.join(','));
+    db.setSetting(id, 'blackout_dates', unique.join(','));
   }
 
   for (const [camelKey, dbKey] of Object.entries(SETTING_KEYS)) {
     if (Object.prototype.hasOwnProperty.call(body, camelKey)) {
-      db.setSetting(dbKey, next[camelKey]);
+      db.setSetting(id, dbKey, next[camelKey]);
     }
   }
 
-  res.json(db.getSettings());
+  res.json(db.getSettings(tenantId(req)));
 }));
 
 router.get('/appointments', asyncHandler((req, res) => {
@@ -206,7 +298,7 @@ router.get('/appointments', asyncHandler((req, res) => {
   }
   if (from) validateStamp(from, 'from');
   if (to) validateStamp(to, 'to');
-  res.json(db.listAppointments({ status, from, to }));
+  res.json(db.listAppointments({ status, from, to, tenantId: tenantId(req) }));
 }));
 
 function csvCell(value) {
@@ -224,7 +316,7 @@ router.get('/appointments/export.csv', asyncHandler((req, res) => {
   if (from) validateStamp(from, 'from');
   if (to) validateStamp(to, 'to');
 
-  const rows = db.listAppointments({ status, from, to });
+  const rows = db.listAppointments({ status, from, to, tenantId: tenantId(req) });
   const header = ['id', 'name', 'phone', 'reason', 'start_time', 'end_time', 'status', 'created_at'];
   const lines = [header.join(',')];
   for (const r of rows) {
@@ -240,7 +332,7 @@ router.post('/appointments', asyncHandler((req, res) => {
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) throw httpError(400, 'name is required.');
 
-  const settings = db.getSettings();
+  const settings = db.getSettings(tenantId(req));
   const lengthMinutes = Object.prototype.hasOwnProperty.call(body, 'lengthMinutes')
     ? parsePositiveInteger(body.lengthMinutes, 'lengthMinutes')
     : settings.appointmentLengthMinutes;
@@ -257,12 +349,12 @@ router.post('/appointments', asyncHandler((req, res) => {
   };
 
   try {
-    const created = db.bookAppointment(rowInput);
+    const created = db.bookAppointment({ ...rowInput, tenantId: tenantId(req) });
     notify.notifyBooked(created, scheduling.formatStampForSpeech).catch(() => {});
     res.status(201).json(created);
   } catch (err) {
     if (err && err.code === 'SLOT_TAKEN') {
-      sendSlotTaken(res, startISO, lengthMinutes);
+      sendSlotTaken(res, startISO, lengthMinutes, tenantId(req));
       return;
     }
     throw err;
@@ -272,7 +364,7 @@ router.post('/appointments', asyncHandler((req, res) => {
 router.patch(['/appointments/:id/reschedule', '/appointments/:id'], asyncHandler((req, res) => {
   const id = parseAppointmentId(req.params.id);
   const body = requireBody(req);
-  const settings = db.getSettings();
+  const settings = db.getSettings(tenantId(req));
   const lengthMinutes = Object.prototype.hasOwnProperty.call(body, 'lengthMinutes')
     ? parsePositiveInteger(body.lengthMinutes, 'lengthMinutes')
     : settings.appointmentLengthMinutes;
@@ -280,13 +372,13 @@ router.patch(['/appointments/:id/reschedule', '/appointments/:id'], asyncHandler
   const endISO = computeEndStamp(startISO, lengthMinutes);
 
   try {
-    const row = db.rescheduleAppointment(id, startISO, endISO);
+    const row = db.rescheduleAppointment(id, startISO, endISO, tenantId(req));
     if (!row) throw httpError(404, 'Appointment not found or not booked.');
     notify.notifyRescheduled(row, scheduling.formatStampForSpeech).catch(() => {});
     res.json(row);
   } catch (err) {
     if (err && err.code === 'SLOT_TAKEN') {
-      sendSlotTaken(res, startISO, lengthMinutes);
+      sendSlotTaken(res, startISO, lengthMinutes, tenantId(req));
       return;
     }
     throw err;
@@ -295,8 +387,8 @@ router.patch(['/appointments/:id/reschedule', '/appointments/:id'], asyncHandler
 
 router.delete('/appointments/:id', asyncHandler((req, res) => {
   const id = parseAppointmentId(req.params.id);
-  const appointment = db.getAppointment(id);
-  if (!db.cancelAppointment(id)) throw httpError(404, 'Appointment not found or already cancelled.');
+  const appointment = db.getAppointment(id, tenantId(req));
+  if (!db.cancelAppointment(id, tenantId(req))) throw httpError(404, 'Appointment not found or already cancelled.');
   if (appointment) notify.notifyCancelled(appointment, scheduling.formatStampForSpeech).catch(() => {});
   res.json({ ok: true });
 }));
@@ -305,17 +397,17 @@ router.get('/availability', asyncHandler((req, res) => {
   const date = req.query.date ? validateDate(req.query.date, 'date') : scheduling.todayDateStr();
   const lengthMinutes = req.query.length
     ? parsePositiveInteger(req.query.length, 'length')
-    : db.getSettings().appointmentLengthMinutes;
-  res.json(scheduling.getAvailableSlots(date, { lengthMinutes }));
+    : db.getSettings(tenantId(req)).appointmentLengthMinutes;
+  res.json(getAvailableSlotsForTenant(date, { lengthMinutes }, tenantId(req)));
 }));
 
 router.get('/messages/unread-count', asyncHandler((req, res) => {
-  res.json({ count: db.countNewMessages() });
+  res.json({ count: db.countNewMessages(tenantId(req)) });
 }));
 
 router.get('/messages', asyncHandler((req, res) => {
   const status = validateMessageStatus(req.query.status || 'all');
-  res.json(db.listMessages({ status }));
+  res.json(db.listMessages({ status, tenantId: tenantId(req) }));
 }));
 
 router.post('/messages', asyncHandler((req, res) => {
@@ -323,6 +415,7 @@ router.post('/messages', asyncHandler((req, res) => {
   const messageBody = typeof body.body === 'string' ? body.body.trim() : '';
   if (!messageBody) throw httpError(400, 'body is required.');
   const row = db.addMessage({
+    tenantId: tenantId(req),
     callerName: typeof body.callerName === 'string' ? body.callerName.trim() : '',
     phone: typeof body.phone === 'string' ? body.phone.trim() : '',
     body: messageBody,
@@ -336,87 +429,95 @@ router.patch('/messages/:id', asyncHandler((req, res) => {
   const body = requireBody(req);
   const status = typeof body.status === 'string' ? body.status : '';
   if (!['new', 'read'].includes(status)) throw httpError(400, "status must be 'new' or 'read'.");
-  if (!db.setMessageStatus(id, status)) throw httpError(404, 'Message not found.');
-  res.json(db.getMessage(id));
+  if (!db.setMessageStatus(id, status, tenantId(req))) throw httpError(404, 'Message not found.');
+  res.json(db.getMessage(id, tenantId(req)));
 }));
 
 router.delete('/messages/:id', asyncHandler((req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) throw httpError(400, 'Message id must be a positive integer.');
-  if (!db.deleteMessage(id)) throw httpError(404, 'Message not found.');
+  if (!db.deleteMessage(id, tenantId(req))) throw httpError(404, 'Message not found.');
   res.json({ ok: true });
 }));
 
 router.get('/phone', asyncHandler(async (req, res) => {
-  res.json(await twilioNumbers.getStatus());
+  res.json(await twilioNumbers.getStatus(tenantId(req)));
 }));
 
 router.get('/phone/numbers', asyncHandler(async (req, res) => {
   try {
-    res.json(await twilioNumbers.listNumbers());
+    res.json(await twilioNumbers.listNumbers(tenantId(req)));
   } catch (err) {
     mapTwilioNumberError(err);
   }
 }));
 
 router.post('/phone/register', asyncHandler(async (req, res) => {
-  try {
-    res.json(await twilioNumbers.registerNumber(requireBody(req)));
-  } catch (err) {
-    mapTwilioNumberError(err);
-  }
+  const body = requireBody(req);
+  const result = await twilioNumbers.assignExistingNumberToTenant(tenantId(req), body.phoneNumber);
+  sendTwilioResult(res, result);
 }));
 
 router.get('/phone/available', asyncHandler(async (req, res) => {
-  try {
-    res.json(await twilioNumbers.searchAvailable(req.query));
-  } catch (err) {
-    mapTwilioNumberError(err);
-  }
+  const result = await twilioNumbers.listAvailableNumbers({ ...req.query, tenantId: tenantId(req) });
+  sendTwilioResult(res, result);
 }));
 
 router.post('/phone/provision', asyncHandler(async (req, res) => {
-  try {
-    res.status(201).json(await twilioNumbers.purchaseNumber(requireBody(req)));
-  } catch (err) {
-    mapTwilioNumberError(err);
-  }
+  const body = requireBody(req);
+  const result = await twilioNumbers.provisionNumberForTenant(tenantId(req), {
+    areaCode: body.areaCode,
+    contains: body.contains,
+  });
+  sendTwilioResult(res, result, 201);
+}));
+
+
+router.get('/calendar', asyncHandler((req, res) => {
+  const id = tenantId(req);
+  const token = getCalendarToken(id);
+  res.json({
+    token,
+    url: buildCalendarUrl(req, token),
+    path: `/calendar.ics?t=${encodeURIComponent(token)}`,
+  });
 }));
 
 // --- Runtime configuration (authenticated) --------------------------------
 
 router.get('/config', asyncHandler((req, res) => {
-  const creds = runtimeConfig.getTwilioCredentials();
+  const id = tenantId(req);
+  const creds = runtimeConfig.getTwilioCredentials(id);
   res.json({
-    businessName: runtimeConfig.getBusinessName(),
-    adminUser: runtimeConfig.getAdminUser(),
-    twilioConfigured: runtimeConfig.isTwilioConfigured(),
+    businessName: runtimeConfig.getBusinessName(id),
+    adminUser: runtimeConfig.getAdminUser(id),
+    twilioConfigured: runtimeConfig.isTwilioConfigured(id),
     // Never return the auth token; expose only a masked hint.
     twilioAccountSid: creds.accountSid,
     smsFromNumber: creds.phoneNumber,
     hasAuthToken: Boolean(creds.authToken),
-    recoveryPhone: runtimeConfig.getRecoveryPhone(),
-    recoveryEmail: runtimeConfig.getRecoveryEmail(),
-    emailConfigured: runtimeConfig.isEmailConfigured(),
-    voiceName: runtimeConfig.getVoiceName(),
+    recoveryPhone: runtimeConfig.getRecoveryPhone(id),
+    recoveryEmail: runtimeConfig.getRecoveryEmail(id),
+    emailConfigured: runtimeConfig.isEmailConfigured(id),
+    voiceName: runtimeConfig.getVoiceName(id),
     voiceOptions: runtimeConfig.getVoiceOptions(),
     voiceEnvManaged: runtimeConfig.isVoiceEnvManaged(),
     aiUnderstanding: (() => {
-      const ai = runtimeConfig.getOpenAiConfig();
+      const ai = runtimeConfig.getOpenAiConfig(tenantId(req));
       // Never return the API key; expose only whether one is configured.
       return {
-        enabled: runtimeConfig.isAiUnderstandingEnabled(),
+        enabled: runtimeConfig.isAiUnderstandingEnabled(id),
         hasApiKey: Boolean(ai.apiKey),
         model: ai.model,
         envManaged: runtimeConfig.isOpenAiEnvManaged(),
       };
     })(),
     email: (() => {
-      const e = runtimeConfig.getEmailConfig();
+      const e = runtimeConfig.getEmailConfig(id);
       // Never return the SMTP password; expose only whether one is set.
       return { host: e.host, port: e.port, secure: e.secure, user: e.user, from: e.from, hasPassword: Boolean(e.pass) };
     })(),
-    setup: runtimeConfig.getSetupStatus(),
+    setup: runtimeConfig.getSetupStatus(id),
   });
 }));
 
@@ -424,8 +525,8 @@ router.put('/config/business', asyncHandler((req, res) => {
   const body = requireBody(req);
   const name = typeof body.businessName === 'string' ? body.businessName.trim() : '';
   if (!name) throw httpError(400, 'businessName is required.');
-  runtimeConfig.setBusinessName(name);
-  res.json({ ok: true, businessName: runtimeConfig.getBusinessName() });
+  runtimeConfig.setBusinessName(name, tenantId(req));
+  res.json({ ok: true, businessName: runtimeConfig.getBusinessName(tenantId(req)) });
 }));
 
 router.put('/config/twilio', asyncHandler(async (req, res) => {
@@ -438,13 +539,13 @@ router.put('/config/twilio', asyncHandler(async (req, res) => {
     throw httpError(400, 'accountSid must start with "AC".');
   }
 
-  runtimeConfig.setTwilioCredentials({ accountSid, authToken, phoneNumber });
+  runtimeConfig.setTwilioCredentials({ accountSid, authToken, phoneNumber }, tenantId(req));
 
   // Verify the saved credentials so the UI can show a clear success/failure.
-  const result = body.test === false ? { ok: null } : await runtimeConfig.testTwilioCredentials();
+  const result = body.test === false ? { ok: null } : await runtimeConfig.testTwilioCredentials(runtimeConfig.getTwilioCredentials(tenantId(req)));
   res.json({
     ok: true,
-    twilioConfigured: runtimeConfig.isTwilioConfigured(),
+    twilioConfigured: runtimeConfig.isTwilioConfigured(tenantId(req)),
     test: result,
   });
 }));
@@ -455,7 +556,7 @@ router.post('/config/twilio/test', asyncHandler(async (req, res) => {
     body.accountSid && body.authToken
       ? { accountSid: String(body.accountSid).trim(), authToken: String(body.authToken).trim() }
       : undefined;
-  res.json(await runtimeConfig.testTwilioCredentials(creds));
+  res.json(await runtimeConfig.testTwilioCredentials(creds || runtimeConfig.getTwilioCredentials(tenantId(req))));
 }));
 
 router.put('/config/admin-password', asyncHandler((req, res) => {
@@ -463,7 +564,7 @@ router.put('/config/admin-password', asyncHandler((req, res) => {
   const password = String(body.password || '');
   if (password.length < 6) throw httpError(400, 'password must be at least 6 characters.');
   const user = body.user !== undefined ? String(body.user).trim() || 'admin' : undefined;
-  runtimeConfig.setAdminCredentials({ user, password });
+  runtimeConfig.setAdminCredentials({ user, password }, tenantId(req));
   res.json({ ok: true });
 }));
 
@@ -473,8 +574,8 @@ router.put('/config/recovery-phone', asyncHandler((req, res) => {
   if (phone && !/^\+?[0-9][0-9\s().-]{5,}$/.test(phone)) {
     throw httpError(400, 'recoveryPhone must be a valid phone number.');
   }
-  runtimeConfig.setRecoveryPhone(phone);
-  res.json({ ok: true, recoveryPhone: runtimeConfig.getRecoveryPhone() });
+  runtimeConfig.setRecoveryPhone(phone, tenantId(req));
+  res.json({ ok: true, recoveryPhone: runtimeConfig.getRecoveryPhone(tenantId(req)) });
 }));
 
 router.put('/config/voice', asyncHandler((req, res) => {
@@ -484,8 +585,8 @@ router.put('/config/voice', asyncHandler((req, res) => {
   if (!/^[A-Za-z0-9][A-Za-z0-9.\-]{1,60}$/.test(name)) {
     throw httpError(400, 'voiceName has an invalid format.');
   }
-  runtimeConfig.setVoiceName(name);
-  res.json({ ok: true, voiceName: runtimeConfig.getVoiceName() });
+  runtimeConfig.setVoiceName(name, tenantId(req));
+  res.json({ ok: true, voiceName: runtimeConfig.getVoiceName(tenantId(req)) });
 }));
 
 router.put('/config/ai', asyncHandler((req, res) => {
@@ -508,12 +609,13 @@ router.put('/config/ai', asyncHandler((req, res) => {
     }
     update.model = model;
   }
-  runtimeConfig.setOpenAiConfig(update);
-  const ai = runtimeConfig.getOpenAiConfig();
+  runtimeConfig.setOpenAiConfig(update, tenantId(req));
+  const id = tenantId(req);
+  const ai = runtimeConfig.getOpenAiConfig(id);
   res.json({
     ok: true,
     aiUnderstanding: {
-      enabled: runtimeConfig.isAiUnderstandingEnabled(),
+      enabled: runtimeConfig.isAiUnderstandingEnabled(id),
       hasApiKey: Boolean(ai.apiKey),
       model: ai.model,
       envManaged: runtimeConfig.isOpenAiEnvManaged(),
@@ -527,8 +629,8 @@ router.put('/config/recovery-email', asyncHandler((req, res) => {
   if (addr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
     throw httpError(400, 'recoveryEmail must be a valid email address.');
   }
-  runtimeConfig.setRecoveryEmail(addr);
-  res.json({ ok: true, recoveryEmail: runtimeConfig.getRecoveryEmail() });
+  runtimeConfig.setRecoveryEmail(addr, tenantId(req));
+  res.json({ ok: true, recoveryEmail: runtimeConfig.getRecoveryEmail(tenantId(req)) });
 }));
 
 router.put('/config/email', asyncHandler(async (req, res) => {
@@ -547,10 +649,10 @@ router.put('/config/email', asyncHandler(async (req, res) => {
     throw httpError(400, 'from must be a valid email address.');
   }
 
-  runtimeConfig.setEmailConfig({ host, port, secure, user, pass, from });
+  runtimeConfig.setEmailConfig({ host, port, secure, user, pass, from }, tenantId(req));
 
-  const result = body.test === false ? { ok: null } : await email.testEmailConfig();
-  res.json({ ok: true, emailConfigured: runtimeConfig.isEmailConfigured(), test: result });
+  const result = body.test === false ? { ok: null } : await email.testEmailConfig(runtimeConfig.getEmailConfig(tenantId(req)));
+  res.json({ ok: true, emailConfigured: runtimeConfig.isEmailConfigured(tenantId(req)), test: result });
 }));
 
 router.post('/config/email/test', asyncHandler(async (req, res) => {
@@ -566,7 +668,7 @@ router.post('/config/email/test', asyncHandler(async (req, res) => {
           from: body.from ? String(body.from).trim() : '',
         }
       : undefined;
-  res.json(await email.testEmailConfig(overrides));
+  res.json(await email.testEmailConfig(overrides || runtimeConfig.getEmailConfig(tenantId(req))));
 }));
 
 // --- Backups (authenticated) ----------------------------------------------

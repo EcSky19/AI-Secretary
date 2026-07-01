@@ -81,42 +81,54 @@ function buildContext(extra = {}) {
   try {
     // eslint-disable-next-line global-require
     const runtime = require('./runtime-config');
-    if (runtime.getBusinessName) base.businessName = runtime.getBusinessName();
+    if (extra.businessName) base.businessName = extra.businessName;
+    else if (runtime.getBusinessName) base.businessName = runtime.getBusinessName(extra.tenantId);
   } catch (_err) {
     /* optional */
   }
   try {
     // eslint-disable-next-line global-require
     const db = require('./db');
-    const settings = db.getSettings ? db.getSettings() : null;
+    const settings = extra.tenantConfig
+      ? {
+          businessHoursStart: extra.tenantConfig.businessHoursStart,
+          businessHoursEnd: extra.tenantConfig.businessHoursEnd,
+          appointmentLengthMinutes: extra.tenantConfig.appointmentLengthMinutes,
+        }
+      : db.getSettings
+        ? db.getSettings(extra.tenantId)
+        : null;
     if (settings) {
-      base.businessHours = { start: settings.businessHoursStart, end: settings.businessHoursEnd };
+      base.businessHours = extra.businessHours || { start: settings.businessHoursStart, end: settings.businessHoursEnd };
       base.appointmentLengthMinutes = settings.appointmentLengthMinutes;
     }
   } catch (_err) {
     /* optional */
   }
   if (extra && typeof extra === 'object') {
-    const { flow, name, requestedDate, requestedTime } = extra;
+    const { flow, name, requestedDate, requestedTime, tenantId, openai, aiUnderstandingEnabled } = extra;
     if (flow) base.conversationFlow = flow;
     if (name) base.callerName = name;
     if (requestedDate) base.requestedDate = requestedDate;
     if (requestedTime) base.requestedTime = requestedTime;
+    if (tenantId) base.tenantId = tenantId;
+    if (openai?.model) base.openAiModel = openai.model;
+    if (aiUnderstandingEnabled !== undefined) base.aiUnderstandingEnabled = Boolean(aiUnderstandingEnabled);
   }
   return base;
 }
 
-function getOpenAiSettings() {
+function getOpenAiSettings(tenantId) {
   try {
     // eslint-disable-next-line global-require
-    return require('./runtime-config').getOpenAiConfig();
+    return require('./runtime-config').getOpenAiConfig(tenantId);
   } catch (_err) {
     return { apiKey: config.openai.apiKey, model: config.openai.model };
   }
 }
 
 async function parseWithOpenAI(speechText, context = {}) {
-  const { apiKey, model } = getOpenAiSettings();
+  const { apiKey, model } = context.openai || getOpenAiSettings(context.tenantId);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -159,11 +171,12 @@ async function parseWithOpenAI(speechText, context = {}) {
 async function parseIntent(speechText, context = {}) {
   const fallback = ruleBasedParse(speechText);
 
-  const { apiKey } = getOpenAiSettings();
+  const { apiKey } = context.openai || getOpenAiSettings(context.tenantId);
   if (!apiKey) return fallback;
 
   try {
-    const ai = await parseWithOpenAI(speechText, buildContext(context));
+    const aiContext = buildContext(context);
+    const ai = await parseWithOpenAI(speechText, { ...aiContext, openai: context.openai });
     const localDateTime = parseDateTime(speechText);
     return {
       intent: normalizeIntent(ai.intent) || fallback.intent,

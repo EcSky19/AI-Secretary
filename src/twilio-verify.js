@@ -2,6 +2,7 @@
 
 const config = require('./config');
 const runtimeConfig = require('./runtime-config');
+const tenancy = require('./tenancy');
 
 // Whether Twilio request-signature validation should run. Requires an auth
 // token (from env or runtime config) and the feature flag (on by default,
@@ -34,10 +35,13 @@ function verifyTwilio(req, res, next) {
     // eslint-disable-next-line global-require
     ({ validateRequest } = require('twilio'));
   } catch {
-    // Twilio SDK unavailable — fail open rather than blocking calls.
-    return next();
+    return res.status(403).type('text/plain').send('Invalid Twilio signature');
   }
 
+  const tenant = req.body?.To ? tenancy.resolveTenantByPhone(req.body.To) : null;
+  // Voice tenants share one platform Twilio account, so the resolved tenant only
+  // identifies the dialed number; signature validation still uses the platform token.
+  void tenant;
   const signature = req.headers['x-twilio-signature'];
   const url = buildRequestUrl(req);
   const params = req.body && typeof req.body === 'object' ? req.body : {};

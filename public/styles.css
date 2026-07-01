@@ -41,6 +41,14 @@ body {
   justify-content: space-between;
   gap: 16px;
 }
+.hero-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
 .eyebrow {
   margin: 0 0 6px;
   color: var(--primary);
@@ -360,6 +368,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
   max-width: 880px;
   padding: 0 clamp(18px, 4vw, 56px) 44px;
 }
+.auth-shell { max-width: 620px; }
 .setup-steps {
   display: grid;
   gap: 10px;

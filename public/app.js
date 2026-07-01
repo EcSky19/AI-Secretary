@@ -8,9 +8,9 @@ const state = {
   messages: [],
   unreadCount: 0,
   phone: null,
+  calendar: null,
   config: null,
   setupStatus: null,
-  phoneNumbers: [],
   availableNumbers: [],
   backups: [],
   backupDir: '',
@@ -33,6 +33,7 @@ const els = {
   authBanner: document.querySelector('#auth-banner'),
   dismissAuthBanner: document.querySelector('#dismiss-auth-banner'),
   calendarUrl: document.querySelector('#calendar-url'),
+  calendarLink: document.querySelector('.calendar-link'),
   dialog: document.querySelector('#booking-dialog'),
   bookingForm: document.querySelector('#booking-form'),
   bookingTime: document.querySelector('#booking-time'),
@@ -56,8 +57,7 @@ const els = {
   cancelReschedule: document.querySelector('#cancel-reschedule'),
   phonePanel: document.querySelector('#phone-panel'),
   phoneActions: document.querySelector('#phone-actions'),
-  loadPhoneNumbers: document.querySelector('#load-phone-numbers'),
-  phoneNumberSelect: document.querySelector('#phone-number-select'),
+  ownedPhoneNumber: document.querySelector('#owned-phone-number'),
   registerPhoneNumber: document.querySelector('#register-phone-number'),
   availablePhoneForm: document.querySelector('#available-phone-form'),
   phoneAreaCode: document.querySelector('#phone-area-code'),
@@ -81,13 +81,7 @@ const els = {
   recoveryEmailForm: document.querySelector('#recovery-email-form'),
   recoveryEmail: document.querySelector('#recovery-email'),
   configMessage: document.querySelector('#config-message'),
-  twilioConfigForm: document.querySelector('#twilio-config-form'),
   twilioStatus: document.querySelector('#twilio-status'),
-  twilioAccountSid: document.querySelector('#twilio-account-sid'),
-  twilioAuthToken: document.querySelector('#twilio-auth-token'),
-  twilioPhoneNumber: document.querySelector('#twilio-phone-number'),
-  twilioTestResult: document.querySelector('#twilio-test-result'),
-  testTwilioConfig: document.querySelector('#test-twilio-config'),
   emailConfigForm: document.querySelector('#email-config-form'),
   emailStatus: document.querySelector('#email-status'),
   emailHost: document.querySelector('#email-host'),
@@ -109,6 +103,8 @@ const els = {
   backupMessage: document.querySelector('#backup-message'),
   backupDir: document.querySelector('#backup-dir'),
   backupList: document.querySelector('#backup-list'),
+  logoutButton: document.querySelector('#logout-button'),
+  accountLogoutButton: document.querySelector('#account-logout-button'),
 };
 
 function todayLocalDate() {
@@ -184,10 +180,11 @@ async function api(path, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) showAuthBanner();
+    if (response.status === 401) redirectToLogin();
+    const responseError = typeof data.error === 'string' ? data.error : (data.error && data.error.message);
     const err = new Error(response.status === 401
-      ? 'Authentication required. Reload the page and sign in with your admin credentials.'
-      : (data.error || `Request failed (${response.status})`));
+      ? 'Authentication required. Please sign in.'
+      : (responseError || `Request failed (${response.status})`));
     err.status = response.status;
     err.data = data;
     throw err;
@@ -201,11 +198,12 @@ async function apiBlob(path, options = {}) {
     ...options,
   });
   if (!response.ok) {
-    if (response.status === 401) showAuthBanner();
+    if (response.status === 401) redirectToLogin();
     const data = await response.json().catch(() => ({}));
+    const responseError = typeof data.error === 'string' ? data.error : (data.error && data.error.message);
     const err = new Error(response.status === 401
-      ? 'Authentication required. Reload the page and sign in with your admin credentials.'
-      : (data.error || `Request failed (${response.status})`));
+      ? 'Authentication required. Please sign in.'
+      : (responseError || `Request failed (${response.status})`));
     err.status = response.status;
     err.data = data;
     throw err;
@@ -215,6 +213,12 @@ async function apiBlob(path, options = {}) {
 
 function showAuthBanner() {
   if (els.authBanner) els.authBanner.hidden = false;
+}
+
+function redirectToLogin() {
+  showAuthBanner();
+  const next = `${window.location.pathname || '/'}${window.location.hash || ''}`;
+  window.location.replace(`/login.html?next=${encodeURIComponent(next)}`);
 }
 
 function friendlyError(err) {
@@ -357,18 +361,11 @@ function renderConfig() {
   }
   if (els.recoveryPhone) els.recoveryPhone.value = config.recoveryPhone || '';
   if (els.recoveryEmail) els.recoveryEmail.value = config.recoveryEmail || '';
-  if (els.adminUser) els.adminUser.value = config.adminUser || 'admin';
-  if (els.twilioAccountSid) els.twilioAccountSid.value = config.twilioAccountSid || '';
-  if (els.twilioPhoneNumber) els.twilioPhoneNumber.value = config.smsFromNumber || '';
-  if (els.twilioAuthToken) els.twilioAuthToken.value = '';
+  if (els.adminUser) els.adminUser.value = config.adminUser || '';
   if (els.twilioStatus) {
-    const configured = Boolean(config.twilioConfigured);
-    els.twilioStatus.className = `notice ${configured ? 'good' : 'warn'}`;
-    const tokenText = config.hasAuthToken ? 'Auth token saved' : 'Auth token not saved';
-    const numberText = config.smsFromNumber ? `SMS/caller number: ${config.smsFromNumber}` : 'No phone number saved yet';
-    els.twilioStatus.textContent = configured
-      ? `Twilio is connected. ${tokenText}. ${numberText}.`
-      : `Twilio is not connected yet. ${tokenText}. ${numberText}.`;
+    const numberText = config.smsFromNumber ? `Assigned number: ${config.smsFromNumber}` : 'No number assigned yet.';
+    els.twilioStatus.className = `notice ${config.smsFromNumber ? 'good' : 'info'}`;
+    els.twilioStatus.textContent = `${numberText} Use the Phone Number panel to get or assign a number.`;
   }
   if (els.emailHost) els.emailHost.value = emailConfig.host || '';
   if (els.emailPort) els.emailPort.value = emailConfig.port || 587;
@@ -495,45 +492,36 @@ function renderMessages() {
 
 function renderPhone() {
   const phone = state.phone || {};
-  const activeNumber = phone.activeNumber || 'Not set';
-  const registeredLabel = phone.registered ? 'Registered' : 'Not registered';
-  const statusClass = phone.registered ? 'good' : 'warn';
-  const configuredNotice = phone.configured
+  const activeNumber = phone.activeNumber || phone.phoneNumber || phone.assignedNumber || (state.config && state.config.smsFromNumber) || '';
+  const registeredLabel = phone.registered || activeNumber ? 'Assigned' : 'Not assigned';
+  const statusClass = activeNumber ? 'good' : 'warn';
+  const emptyNotice = activeNumber
     ? ''
-    : '<div class="notice info">Twilio is not connected yet. Add your Twilio credentials in Configuration to enable phone calls.</div>';
-  const localhostNotice = phone.configured && phone.usingLocalhost
+    : '<div class="notice info">Choose a new number or assign an existing platform-owned number. You do not need Twilio credentials.</div>';
+  const platformNotice = phone.configured === false
+    ? '<div class="notice warn">Number provisioning is not available yet. You can keep managing your schedule and try again later.</div>'
+    : '';
+  const localhostNotice = phone.usingLocalhost
     ? '<div class="notice warn">PUBLIC_BASE_URL is localhost, so clients cannot reach this webhook. Use a tunnel such as ngrok or set a public URL.</div>'
     : '';
-  const registeredNotice = phone.configured
-    ? `<div class="notice ${statusClass}">Active number is ${registeredLabel.toLowerCase()}. Verify its Voice webhook matches the URL below.</div>`
-    : '';
+  const registeredNotice = `<div class="notice ${statusClass}">Phone number is ${registeredLabel.toLowerCase()}.</div>`;
 
   els.phonePanel.innerHTML = `
     <div class="phone-summary">
       <div>
         <div class="muted">Clients should call</div>
-        <div class="phone-number-display">${escapeHtml(activeNumber)}</div>
+        <div class="phone-number-display">${escapeHtml(activeNumber || 'Not set')}</div>
       </div>
-      <div class="phone-detail"><strong>Voice webhook:</strong> ${escapeHtml(phone.webhookUrl || 'Not available')}</div>
-      ${phone.configured ? `<div><span class="badge">${escapeHtml(registeredLabel)}</span></div>` : ''}
+      <div class="phone-detail"><strong>Voice webhook:</strong> ${escapeHtml(phone.webhookUrl || 'Managed by the platform')}</div>
+      <div><span class="badge">${escapeHtml(registeredLabel)}</span></div>
     </div>
-    ${configuredNotice}
+    ${emptyNotice}
+    ${platformNotice}
     ${localhostNotice}
     ${registeredNotice}
     ${phone.error ? `<div class="notice error">${escapeHtml(phone.error)}</div>` : ''}
   `;
-  els.phoneActions.hidden = !phone.configured;
-}
-
-function renderOwnedPhoneNumbers() {
-  if (!state.phoneNumbers.length) {
-    els.phoneNumberSelect.innerHTML = '<option value="">No owned numbers found</option>';
-    return;
-  }
-  els.phoneNumberSelect.innerHTML = state.phoneNumbers.map(number => {
-    const label = `${number.phoneNumber || number.friendlyName || number.sid}${number.registered ? ' — registered' : ''}`;
-    return `<option value="${escapeHtml(number.sid)}">${escapeHtml(label)}</option>`;
-  }).join('');
+  els.phoneActions.hidden = false;
 }
 
 function renderAvailablePhoneNumbers() {
@@ -546,11 +534,11 @@ function renderAvailablePhoneNumbers() {
       <div>
         <div class="slot-title">${escapeHtml(number.phoneNumber)}</div>
         <div class="slot-meta">
-          <span>${escapeHtml(number.friendlyName) || 'Twilio number'}</span>
+          <span>${escapeHtml(number.friendlyName) || 'Phone number'}</span>
           <span>${escapeHtml([number.locality, number.region].filter(Boolean).join(', '))}</span>
         </div>
       </div>
-      <button class="primary" data-provision-phone="${escapeHtml(number.phoneNumber)}">Buy &amp; register</button>
+      <button class="primary" data-provision-phone="${escapeHtml(number.phoneNumber)}">Claim number</button>
     </article>
   `).join('');
 }
@@ -593,6 +581,13 @@ async function loadBackups() {
 async function loadAll() {
   state.config = await api('/api/config');
   renderConfig();
+  try {
+    state.calendar = await api('/api/calendar');
+  } catch (err) {
+    state.calendar = { url: '', path: '', error: friendlyError(err) };
+  }
+  if (els.calendarUrl) els.calendarUrl.value = state.calendar.url || state.calendar.path || '/calendar.ics';
+  if (els.calendarLink) els.calendarLink.href = state.calendar.url || state.calendar.path || '/calendar.ics';
   state.settings = await api('/api/settings');
   renderSettings();
   const { from, to } = dayBounds(els.date.value);
@@ -614,7 +609,9 @@ async function loadAll() {
     state.phone = {
       configured: false,
       activeNumber: state.config.smsFromNumber || '',
-      error: err.status === 503 ? 'Connect Twilio in Configuration before registering a phone number.' : friendlyError(err),
+      error: err.status === 503
+        ? 'Number provisioning is not available yet. Please try again later.'
+        : friendlyError(err),
     };
   }
   renderSchedule();
@@ -677,45 +674,68 @@ async function deleteMessage(id) {
   await loadAll();
 }
 
-async function loadOwnedPhoneNumbers() {
-  state.phoneNumbers = await api('/api/phone/numbers');
-  renderOwnedPhoneNumbers();
-  showMessage('Owned phone numbers loaded.');
-}
-
 async function registerSelectedPhoneNumber() {
-  const sid = els.phoneNumberSelect.value;
-  if (!sid) {
-    showMessage('Choose an owned phone number to register.', 'error');
+  const phoneNumber = els.ownedPhoneNumber.value.trim();
+  if (!phoneNumber) {
+    showMessage('Enter a platform-owned phone number to assign.', 'error');
     return;
   }
-  await api('/api/phone/register', {
+  const result = await api('/api/phone/register', {
     method: 'POST',
-    body: JSON.stringify({ sid }),
+    body: JSON.stringify({ phoneNumber }),
   });
-  showMessage('Phone number registered.');
+  if (result.ok === false) {
+    showPhoneProvisioningMessage(result);
+    return;
+  }
+  showMessage('Phone number assigned.');
+  els.ownedPhoneNumber.value = '';
   await loadAll();
-  await loadOwnedPhoneNumbers();
 }
 
 async function searchAvailablePhoneNumbers() {
-  const params = new URLSearchParams({ country: 'US', limit: '10' });
+  const params = new URLSearchParams();
   if (els.phoneAreaCode.value.trim()) params.set('areaCode', els.phoneAreaCode.value.trim());
   if (els.phoneContains.value.trim()) params.set('contains', els.phoneContains.value.trim());
-  state.availableNumbers = await api(`/api/phone/available?${params.toString()}`);
+  const data = await api(`/api/phone/available${params.toString() ? `?${params.toString()}` : ''}`);
+  if (data.ok === false) {
+    state.availableNumbers = [];
+    renderAvailablePhoneNumbers();
+    showPhoneProvisioningMessage(data);
+    return;
+  }
+  state.availableNumbers = Array.isArray(data) ? data : (Array.isArray(data.numbers) ? data.numbers : []);
   renderAvailablePhoneNumbers();
 }
 
 async function provisionPhoneNumber(phoneNumber) {
-  if (!confirm(`Buy ${phoneNumber} from Twilio and register it for incoming calls? This can incur Twilio charges.`)) return;
-  await api('/api/phone/provision', {
+  if (!confirm(`Claim ${phoneNumber} for this business?`)) return;
+  const body = { phoneNumber };
+  if (els.phoneAreaCode.value.trim()) body.areaCode = els.phoneAreaCode.value.trim();
+  if (els.phoneContains.value.trim()) body.contains = els.phoneContains.value.trim();
+  const result = await api('/api/phone/provision', {
     method: 'POST',
-    body: JSON.stringify({ phoneNumber }),
+    body: JSON.stringify(body),
   });
-  showMessage('Phone number purchased and registered.');
+  if (result.ok === false) {
+    showPhoneProvisioningMessage(result);
+    return;
+  }
+  showMessage('Phone number claimed and assigned.');
   state.availableNumbers = [];
   renderAvailablePhoneNumbers();
   await loadAll();
+}
+
+function showPhoneProvisioningMessage(resultOrError) {
+  const error = resultOrError && resultOrError.error;
+  const message = typeof error === 'string'
+    ? error
+    : (error && error.message) || (resultOrError && resultOrError.message);
+  showMessage(
+    message || 'Number provisioning is not available yet. Please try again later.',
+    'error'
+  );
 }
 
 async function exportAppointmentsCsv() {
@@ -747,6 +767,15 @@ async function createBackupNow() {
     await loadBackups();
   } finally {
     els.backupNow.disabled = false;
+  }
+
+  async function logout() {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } finally {
+      try { localStorage.removeItem('authEmail'); } catch (e) { /* ignore */ }
+      window.location.replace('/login.html');
+    }
   }
 }
 
@@ -810,32 +839,6 @@ async function saveRecoveryEmail() {
   showConfigMessage(result.recoveryEmail ? 'Recovery email saved.' : 'Recovery email cleared.');
 }
 
-async function testTwilioConfig() {
-  const body = {};
-  if (els.twilioAccountSid.value.trim()) body.accountSid = els.twilioAccountSid.value.trim();
-  if (els.twilioAuthToken.value.trim()) body.authToken = els.twilioAuthToken.value;
-  const result = await api('/api/config/twilio/test', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  renderNotice(els.twilioTestResult, result);
-}
-
-async function saveTwilioConfig() {
-  const body = {
-    accountSid: els.twilioAccountSid.value.trim(),
-    phoneNumber: els.twilioPhoneNumber.value.trim(),
-  };
-  if (els.twilioAuthToken.value.trim()) body.authToken = els.twilioAuthToken.value;
-  const result = await api('/api/config/twilio', {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
-  if (result.test) renderNotice(els.twilioTestResult, result.test);
-  showConfigMessage(result.twilioConfigured ? 'Twilio settings saved and connected.' : 'Twilio settings saved.');
-  await loadAll();
-}
-
 function emailConfigBody({ includeTest = false } = {}) {
   const body = {
     host: els.emailHost.value.trim(),
@@ -886,10 +889,6 @@ async function changeAdminPassword() {
 async function initialize() {
   try {
     state.setupStatus = await api('/api/setup/status');
-    if (!state.setupStatus.setupComplete) {
-      window.location.replace('/setup.html');
-      return;
-    }
     if (state.setupStatus.businessName && els.dashboardTitle) {
       els.dashboardTitle.textContent = `${state.setupStatus.businessName} - Schedule`;
     }
@@ -982,17 +981,16 @@ els.messagesList.addEventListener('click', async event => {
   }
 });
 
-els.loadPhoneNumbers.addEventListener('click', () => loadOwnedPhoneNumbers().catch(err => showMessage(friendlyError(err), 'error')));
-els.registerPhoneNumber.addEventListener('click', () => registerSelectedPhoneNumber().catch(err => showMessage(friendlyError(err), 'error')));
+els.registerPhoneNumber.addEventListener('click', () => registerSelectedPhoneNumber().catch(err => showPhoneProvisioningMessage(err)));
 els.exportCsv.addEventListener('click', () => exportAppointmentsCsv().catch(err => showMessage(friendlyError(err), 'error')));
 els.backupNow.addEventListener('click', () => createBackupNow().catch(err => showBackupMessage(friendlyError(err), 'error')));
 els.availablePhoneForm.addEventListener('submit', event => {
   event.preventDefault();
-  searchAvailablePhoneNumbers().catch(err => showMessage(friendlyError(err), 'error'));
+  searchAvailablePhoneNumbers().catch(err => showPhoneProvisioningMessage(err));
 });
 els.availablePhoneResults.addEventListener('click', event => {
   const button = event.target.closest('[data-provision-phone]');
-  if (button) provisionPhoneNumber(button.dataset.provisionPhone).catch(err => showMessage(friendlyError(err), 'error'));
+  if (button) provisionPhoneNumber(button.dataset.provisionPhone).catch(err => showPhoneProvisioningMessage(err));
 });
 
 els.bookingForm.addEventListener('submit', async event => {
@@ -1057,11 +1055,6 @@ els.recoveryEmailForm.addEventListener('submit', event => {
   event.preventDefault();
   saveRecoveryEmail().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
-els.testTwilioConfig.addEventListener('click', () => testTwilioConfig().catch(err => renderNotice(els.twilioTestResult, { ok: false, error: friendlyError(err) })));
-els.twilioConfigForm.addEventListener('submit', event => {
-  event.preventDefault();
-  saveTwilioConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
-});
 els.testEmailConfig.addEventListener('click', () => testEmailConfig().catch(err => renderNotice(els.emailTestResult, { ok: false, error: friendlyError(err) })));
 els.emailConfigForm.addEventListener('submit', event => {
   event.preventDefault();
@@ -1071,6 +1064,8 @@ els.adminPasswordForm.addEventListener('submit', event => {
   event.preventDefault();
   changeAdminPassword().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
+if (els.logoutButton) els.logoutButton.addEventListener('click', () => logout());
+if (els.accountLogoutButton) els.accountLogoutButton.addEventListener('click', () => logout());
 
 initialize();
 setInterval(() => {
@@ -1129,13 +1124,17 @@ setInterval(() => {
   function renderAccount() {
     var c = (typeof state !== 'undefined' && state.config) ? state.config : {};
     var s = (typeof state !== 'undefined' && state.setupStatus) ? state.setupStatus : {};
+    var p = (typeof state !== 'undefined' && state.phone) ? state.phone : {};
+    var cal = (typeof state !== 'undefined' && state.calendar) ? state.calendar : {};
+    var loginEmail = '';
+    try { loginEmail = localStorage.getItem('authEmail') || ''; } catch (e) { loginEmail = ''; }
     function set(id, val) {
       var el = document.querySelector('#' + id);
       if (el) el.textContent = (val === undefined || val === null || val === '') ? '\u2014' : val;
     }
     set('account-business', c.businessName || s.businessName);
-    set('account-admin', c.adminUser || 'admin');
-    set('account-phone', c.smsFromNumber || (c.twilioConfigured ? 'Connected' : 'Not connected'));
+    set('account-admin', loginEmail || c.adminUser || '—');
+    set('account-phone', p.activeNumber || p.phoneNumber || p.assignedNumber || c.smsFromNumber || 'Not assigned');
     var voiceLabel = c.voiceName;
     if (Array.isArray(c.voiceOptions) && c.voiceName) {
       var opt = c.voiceOptions.filter(function (v) { return v && v.name === c.voiceName; })[0];
@@ -1144,6 +1143,7 @@ setInterval(() => {
     set('account-voice', voiceLabel);
     var ai = c.aiUnderstanding || {};
     set('account-ai', ai.enabled ? ('On \u2014 ' + (ai.model || 'configured')) : 'Off \u2014 rule-based understanding');
+    set('account-calendar', cal.url || cal.path || (cal.error ? 'Unavailable' : ''));
     set('account-recovery-phone', maskPhone(c.recoveryPhone) || 'Not set');
     set('account-recovery-email', maskEmail(c.recoveryEmail) || 'Not set');
     set('account-email', c.emailConfigured ? 'Configured' : 'Not configured');
