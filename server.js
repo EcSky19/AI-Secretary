@@ -15,13 +15,17 @@ const app = express();
 app.set('trust proxy', true);
 app.use(securityHeaders);
 app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // Twilio posts urlencoded
 
 // Rate-limit public, unauthenticated routes to blunt abuse.
 const publicLimiter = rateLimit();
 
 // Public onboarding endpoints (before auth so a fresh install can be set up).
-app.use('/api/setup', publicLimiter, require('./src/setup'));
+// Parse their JSON bodies tolerantly (regardless of Content-Type) and BEFORE
+// the urlencoded parser below, so a misconfigured or cached client can never
+// have onboarding fields silently dropped by form-parsing.
+app.use('/api/setup', publicLimiter, express.json({ type: () => true }), require('./src/setup'));
+
+app.use(express.urlencoded({ extended: false })); // Twilio posts urlencoded
 
 // iCal feed (served before static/auth so calendar clients can subscribe).
 app.use('/calendar.ics', require('./src/ical-route'));
