@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reset your AI Secretary password</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="setup-body">
+  <header class="hero setup-hero">
+    <div>
+      <p class="eyebrow">Password help</p>
+      <h1>Reset your password</h1>
+      <p class="subtitle">No technical steps. We’ll text a 6-digit code to the recovery phone saved for this business.</p>
+    </div>
+  </header>
+
+  <main class="setup-shell">
+    <div id="reset-message" class="message" role="status" aria-live="polite"></div>
+
+    <section id="reset-unavailable" class="card setup-step" aria-labelledby="reset-unavailable-title" hidden>
+      <p class="eyebrow">Can’t send a code yet</p>
+      <h2 id="reset-unavailable-title">Reset by text is not available</h2>
+      <p id="reset-unavailable-copy" class="muted"></p>
+      <div id="reset-unavailable-help" class="notice info"></div>
+      <p class="button-row setup-final-actions">
+        <a class="secondary setup-link-button" href="/setup.html">Open setup</a>
+        <a class="primary setup-link-button" href="/">Back to dashboard</a>
+      </p>
+    </section>
+
+    <section id="request-step" class="card setup-step" aria-labelledby="request-step-title" hidden>
+      <p class="eyebrow">Step 1</p>
+      <h2 id="request-step-title">Text me a reset code</h2>
+      <p class="muted">We’ll send a 6-digit code to the recovery phone on file. Keep this page open after you request it.</p>
+      <div class="button-row setup-final-actions">
+        <a class="secondary setup-link-button" href="/">Back to dashboard</a>
+        <button type="button" id="send-code" class="primary">Text me a reset code</button>
+      </div>
+    </section>
+
+    <section id="reset-step" class="card setup-step" aria-labelledby="reset-step-title" hidden>
+      <p class="eyebrow">Step 2</p>
+      <h2 id="reset-step-title">Enter the code and choose a new password</h2>
+      <p class="muted">Type the 6-digit code from the text message, then choose a password you’ll remember.</p>
+      <form id="reset-form" class="form-stack">
+        <label>6-digit code
+          <input id="reset-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="123456">
+        </label>
+        <label>New password
+          <input id="new-password" type="password" autocomplete="new-password" minlength="6" required>
+          <span class="field-help">Use at least 6 characters.</span>
+        </label>
+        <label>Confirm new password
+          <input id="confirm-password" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <div class="button-row">
+          <button type="button" id="send-new-code" class="secondary">Send a new code</button>
+          <button type="submit" id="reset-password" class="primary">Update password</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="success-step" class="card setup-step" aria-labelledby="success-step-title" hidden>
+      <p class="eyebrow">All set</p>
+      <h2 id="success-step-title">Your password is updated</h2>
+      <p id="success-copy" class="muted">You can now sign in with your new password.</p>
+      <p class="button-row setup-final-actions"><a class="primary setup-link-button" href="/">Go to sign in</a></p>
+    </section>
+  </main>
+
+  <script src="/forgot.js"></script>
+</body>
+</html>

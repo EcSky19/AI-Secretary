@@ -39,6 +39,31 @@ function setBusinessName(name) {
   db.setSetting('business_name', String(name || '').trim());
 }
 
+// --- Recovery phone (for password reset by SMS) ----------------------------
+
+function getRecoveryPhone() {
+  return db.getSetting('recovery_phone') || '';
+}
+function setRecoveryPhone(phone) {
+  db.setSetting('recovery_phone', String(phone || '').trim());
+}
+
+// Mask a phone number for display, revealing only the last 4 digits.
+function maskPhone(phone) {
+  const s = String(phone || '').trim();
+  if (!s) return '';
+  const digits = s.replace(/\D/g, '');
+  if (digits.length <= 4) return '••••';
+  const last4 = digits.slice(-4);
+  return `••• ••• ${last4}`;
+}
+
+// True when the admin password is pinned via environment variable. In that case
+// a database-backed password reset would have no effect (env always wins).
+function isPasswordEnvManaged() {
+  return Boolean(config.admin.password);
+}
+
 // --- Twilio credentials ----------------------------------------------------
 
 function getTwilioCredentials() {
@@ -168,6 +193,8 @@ function getSetupStatus() {
     smsFromNumber: getTwilioCredentials().phoneNumber || '',
     publicBaseUrl: config.publicBaseUrl,
     usingLocalhost: /localhost|127\.0\.0\.1/.test(config.publicBaseUrl || ''),
+    recoveryPhoneSet: Boolean(getRecoveryPhone()),
+    passwordEnvManaged: isPasswordEnvManaged(),
   };
 }
 
@@ -175,6 +202,10 @@ module.exports = {
   onCredentialsChange,
   getBusinessName,
   setBusinessName,
+  getRecoveryPhone,
+  setRecoveryPhone,
+  maskPhone,
+  isPasswordEnvManaged,
   getTwilioCredentials,
   isTwilioConfigured,
   setTwilioCredentials,

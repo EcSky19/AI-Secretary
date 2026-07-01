@@ -394,6 +394,7 @@ router.get('/config', asyncHandler((req, res) => {
     twilioAccountSid: creds.accountSid,
     smsFromNumber: creds.phoneNumber,
     hasAuthToken: Boolean(creds.authToken),
+    recoveryPhone: runtimeConfig.getRecoveryPhone(),
     setup: runtimeConfig.getSetupStatus(),
   });
 }));
@@ -443,6 +444,16 @@ router.put('/config/admin-password', asyncHandler((req, res) => {
   const user = body.user !== undefined ? String(body.user).trim() || 'admin' : undefined;
   runtimeConfig.setAdminCredentials({ user, password });
   res.json({ ok: true });
+}));
+
+router.put('/config/recovery-phone', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  const phone = body.recoveryPhone === undefined ? '' : String(body.recoveryPhone || '').trim();
+  if (phone && !/^\+?[0-9][0-9\s().-]{5,}$/.test(phone)) {
+    throw httpError(400, 'recoveryPhone must be a valid phone number.');
+  }
+  runtimeConfig.setRecoveryPhone(phone);
+  res.json({ ok: true, recoveryPhone: runtimeConfig.getRecoveryPhone() });
 }));
 
 // --- Backups (authenticated) ----------------------------------------------

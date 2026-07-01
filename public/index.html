@@ -100,6 +100,13 @@
         </label>
         <button type="submit" class="secondary full">Save business name</button>
       </form>
+      <form id="recovery-phone-form" class="form-stack config-form">
+        <label>Recovery phone (for password reset)
+          <input id="recovery-phone" autocomplete="tel" placeholder="+15551234567">
+          <span class="field-help">If you ever forget your password, we'll text a reset code to this number. Use a mobile you control.</span>
+        </label>
+        <button type="submit" class="secondary full">Save recovery phone</button>
+      </form>
       <form id="twilio-config-form" class="form-stack config-form">
         <div id="twilio-status" class="notice info">Loading phone connection�</div>
         <label>Twilio Account SID

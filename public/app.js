@@ -67,6 +67,8 @@ const els = {
   pageTitle: document.querySelector('#page-title'),
   businessConfigForm: document.querySelector('#business-config-form'),
   configBusinessName: document.querySelector('#config-business-name'),
+  recoveryPhoneForm: document.querySelector('#recovery-phone-form'),
+  recoveryPhone: document.querySelector('#recovery-phone'),
   configMessage: document.querySelector('#config-message'),
   twilioConfigForm: document.querySelector('#twilio-config-form'),
   twilioStatus: document.querySelector('#twilio-status'),
@@ -282,6 +284,7 @@ function renderConfig() {
   if (els.dashboardTitle) els.dashboardTitle.textContent = `${businessName} - Schedule`;
   if (els.pageTitle) els.pageTitle.textContent = `${businessName} - Schedule`;
   if (els.configBusinessName) els.configBusinessName.value = businessName;
+  if (els.recoveryPhone) els.recoveryPhone.value = config.recoveryPhone || '';
   if (els.adminUser) els.adminUser.value = config.adminUser || 'admin';
   if (els.twilioAccountSid) els.twilioAccountSid.value = config.twilioAccountSid || '';
   if (els.twilioPhoneNumber) els.twilioPhoneNumber.value = config.smsFromNumber || '';
@@ -663,6 +666,16 @@ async function saveBusinessConfig() {
   await loadAll();
 }
 
+async function saveRecoveryPhone() {
+  const result = await api('/api/config/recovery-phone', {
+    method: 'PUT',
+    body: JSON.stringify({ recoveryPhone: els.recoveryPhone.value.trim() }),
+  });
+  if (state.config) state.config.recoveryPhone = result.recoveryPhone || '';
+  if (els.recoveryPhone) els.recoveryPhone.value = result.recoveryPhone || '';
+  showConfigMessage(result.recoveryPhone ? 'Recovery phone saved.' : 'Recovery phone cleared.');
+}
+
 async function testTwilioConfig() {
   const body = {};
   if (els.twilioAccountSid.value.trim()) body.accountSid = els.twilioAccountSid.value.trim();
@@ -862,6 +875,10 @@ els.dismissAuthBanner.addEventListener('click', () => { els.authBanner.hidden = 
 els.businessConfigForm.addEventListener('submit', event => {
   event.preventDefault();
   saveBusinessConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.recoveryPhoneForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveRecoveryPhone().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
 els.testTwilioConfig.addEventListener('click', () => testTwilioConfig().catch(err => renderNotice(els.twilioTestResult, { ok: false, error: friendlyError(err) })));
 els.twilioConfigForm.addEventListener('submit', event => {

@@ -1,0 +1,167 @@
+'use strict';
+
+const resetState = {
+  status: null,
+};
+
+const els = {
+  message: document.querySelector('#reset-message'),
+  unavailable: document.querySelector('#reset-unavailable'),
+  unavailableCopy: document.querySelector('#reset-unavailable-copy'),
+  unavailableHelp: document.querySelector('#reset-unavailable-help'),
+  requestStep: document.querySelector('#request-step'),
+  resetStep: document.querySelector('#reset-step'),
+  successStep: document.querySelector('#success-step'),
+  successCopy: document.querySelector('#success-copy'),
+  sendCode: document.querySelector('#send-code'),
+  sendNewCode: document.querySelector('#send-new-code'),
+  resetForm: document.querySelector('#reset-form'),
+  resetCode: document.querySelector('#reset-code'),
+  newPassword: document.querySelector('#new-password'),
+  confirmPassword: document.querySelector('#confirm-password'),
+  resetPassword: document.querySelector('#reset-password'),
+};
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(data.error || `Request failed (${response.status})`);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function showMessage(text, type = 'success', persist = false) {
+  els.message.textContent = text;
+  els.message.className = `message show ${type}`;
+  clearTimeout(showMessage.timer);
+  if (!persist) showMessage.timer = setTimeout(() => { els.message.className = 'message'; }, 7000);
+}
+
+function hideAllSteps() {
+  [els.unavailable, els.requestStep, els.resetStep, els.successStep].forEach(section => { section.hidden = true; });
+}
+
+function unavailableHelp(reason) {
+  if (reason === 'env-managed') {
+    return 'This password is controlled by the app hosting settings. Ask the person who manages the hosting account to update it there.';
+  }
+  if (reason === 'not-configured') {
+    return 'It looks like setup is not finished yet. Open setup to create the first login.';
+  }
+  if (reason === 'no-recovery-phone' || reason === 'sms-unavailable') {
+    return 'Ask whoever set up AI Secretary for help. If an admin is still signed in, they can add a recovery number under Settings.';
+  }
+  return 'If you need help, ask the person who set up AI Secretary for this business.';
+}
+
+function showUnavailable(status) {
+  hideAllSteps();
+  els.unavailable.hidden = false;
+  els.unavailableCopy.textContent = status.message || 'Reset by text is not available right now.';
+  els.unavailableHelp.textContent = unavailableHelp(status.reason);
+  showMessage(status.message || 'Reset by text is not available right now.', 'error', true);
+}
+
+function showRequestStep() {
+  hideAllSteps();
+  els.requestStep.hidden = false;
+}
+
+function showResetStep() {
+  els.requestStep.hidden = true;
+  els.resetStep.hidden = false;
+  els.resetCode.focus();
+}
+
+function setButtonBusy(button, busyText, isBusy) {
+  if (!button) return;
+  if (isBusy) {
+    button.dataset.originalText = button.textContent;
+    button.textContent = busyText;
+    button.disabled = true;
+    return;
+  }
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.disabled = false;
+}
+
+function resetErrorMessage(err) {
+  const data = err.data || {};
+  if (data.reason === 'cooldown' && data.retryAfter) {
+    return `${err.message} You can try again in about ${data.retryAfter} seconds.`;
+  }
+  return err.message;
+}
+
+async function requestCode(button = els.sendCode) {
+  setButtonBusy(button, 'Sending code…', true);
+  try {
+    const result = await api('/api/setup/forgot', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    showMessage(result.message || 'We sent a reset code.');
+    showResetStep();
+  } catch (err) {
+    showMessage(resetErrorMessage(err), 'error');
+  } finally {
+    setButtonBusy(button, '', false);
+  }
+}
+
+async function resetPassword() {
+  const code = els.resetCode.value.trim();
+  const newPassword = els.newPassword.value;
+  if (!/^\d{6}$/.test(code)) {
+    showMessage('Enter the 6-digit code from the text message.', 'error');
+    return;
+  }
+  if (newPassword !== els.confirmPassword.value) {
+    showMessage('Passwords do not match.', 'error');
+    return;
+  }
+  setButtonBusy(els.resetPassword, 'Updating…', true);
+  try {
+    const result = await api('/api/setup/reset', {
+      method: 'POST',
+      body: JSON.stringify({ code, newPassword }),
+    });
+    hideAllSteps();
+    els.successStep.hidden = false;
+    els.successCopy.textContent = result.message || 'Password updated. You can now sign in with your new password.';
+    showMessage(result.message || 'Password updated. You can now sign in.', 'success', true);
+  } catch (err) {
+    showMessage(err.message, 'error');
+  } finally {
+    setButtonBusy(els.resetPassword, '', false);
+  }
+}
+
+async function initialize() {
+  hideAllSteps();
+  showMessage('Checking password reset options…', 'success');
+  const status = await api('/api/setup/reset-status', { headers: {} });
+  resetState.status = status;
+  if (!status.available) {
+    showUnavailable(status);
+    return;
+  }
+  els.message.className = 'message';
+  showRequestStep();
+}
+
+els.sendCode.addEventListener('click', () => requestCode().catch(err => showMessage(resetErrorMessage(err), 'error')));
+els.sendNewCode.addEventListener('click', () => requestCode(els.sendNewCode).catch(err => showMessage(resetErrorMessage(err), 'error')));
+els.resetForm.addEventListener('submit', event => {
+  event.preventDefault();
+  resetPassword().catch(err => showMessage(err.message, 'error'));
+});
+
+initialize().catch(err => showMessage(err.message, 'error', true));
