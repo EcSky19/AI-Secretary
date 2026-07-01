@@ -69,6 +69,8 @@ const els = {
   configBusinessName: document.querySelector('#config-business-name'),
   recoveryPhoneForm: document.querySelector('#recovery-phone-form'),
   recoveryPhone: document.querySelector('#recovery-phone'),
+  recoveryEmailForm: document.querySelector('#recovery-email-form'),
+  recoveryEmail: document.querySelector('#recovery-email'),
   configMessage: document.querySelector('#config-message'),
   twilioConfigForm: document.querySelector('#twilio-config-form'),
   twilioStatus: document.querySelector('#twilio-status'),
@@ -77,6 +79,17 @@ const els = {
   twilioPhoneNumber: document.querySelector('#twilio-phone-number'),
   twilioTestResult: document.querySelector('#twilio-test-result'),
   testTwilioConfig: document.querySelector('#test-twilio-config'),
+  emailConfigForm: document.querySelector('#email-config-form'),
+  emailStatus: document.querySelector('#email-status'),
+  emailHost: document.querySelector('#email-host'),
+  emailPort: document.querySelector('#email-port'),
+  emailSecure: document.querySelector('#email-secure'),
+  emailUser: document.querySelector('#email-user'),
+  emailPass: document.querySelector('#email-pass'),
+  emailPassHelp: document.querySelector('#email-pass-help'),
+  emailFrom: document.querySelector('#email-from'),
+  emailTestResult: document.querySelector('#email-test-result'),
+  testEmailConfig: document.querySelector('#test-email-config'),
   adminPasswordForm: document.querySelector('#admin-password-form'),
   adminUser: document.querySelector('#admin-user'),
   adminPassword: document.querySelector('#admin-password'),
@@ -280,11 +293,13 @@ function renderSettings() {
 
 function renderConfig() {
   const config = state.config || {};
+  const emailConfig = config.email || {};
   const businessName = config.businessName || (state.setupStatus && state.setupStatus.businessName) || 'AI Secretary';
   if (els.dashboardTitle) els.dashboardTitle.textContent = `${businessName} - Schedule`;
   if (els.pageTitle) els.pageTitle.textContent = `${businessName} - Schedule`;
   if (els.configBusinessName) els.configBusinessName.value = businessName;
   if (els.recoveryPhone) els.recoveryPhone.value = config.recoveryPhone || '';
+  if (els.recoveryEmail) els.recoveryEmail.value = config.recoveryEmail || '';
   if (els.adminUser) els.adminUser.value = config.adminUser || 'admin';
   if (els.twilioAccountSid) els.twilioAccountSid.value = config.twilioAccountSid || '';
   if (els.twilioPhoneNumber) els.twilioPhoneNumber.value = config.smsFromNumber || '';
@@ -297,6 +312,26 @@ function renderConfig() {
     els.twilioStatus.textContent = configured
       ? `Twilio is connected. ${tokenText}. ${numberText}.`
       : `Twilio is not connected yet. ${tokenText}. ${numberText}.`;
+  }
+  if (els.emailHost) els.emailHost.value = emailConfig.host || '';
+  if (els.emailPort) els.emailPort.value = emailConfig.port || 587;
+  if (els.emailSecure) els.emailSecure.checked = Boolean(emailConfig.secure);
+  if (els.emailUser) els.emailUser.value = emailConfig.user || '';
+  if (els.emailPass) els.emailPass.value = '';
+  if (els.emailPassHelp) {
+    els.emailPassHelp.textContent = emailConfig.hasPassword
+      ? 'Leave blank to keep the current password.'
+      : 'Enter the SMTP password or app password.';
+  }
+  if (els.emailFrom) els.emailFrom.value = emailConfig.from || '';
+  if (els.emailStatus) {
+    const configured = Boolean(config.emailConfigured);
+    els.emailStatus.className = `notice ${configured ? 'good' : 'warn'}`;
+    const passwordText = emailConfig.hasPassword ? 'SMTP password saved' : 'SMTP password not saved';
+    const fromText = emailConfig.from ? `From: ${emailConfig.from}` : 'No from address saved yet';
+    els.emailStatus.textContent = configured
+      ? `Email is connected. ${passwordText}. ${fromText}.`
+      : `Email is not connected yet. ${passwordText}. ${fromText}.`;
   }
 }
 
@@ -676,6 +711,16 @@ async function saveRecoveryPhone() {
   showConfigMessage(result.recoveryPhone ? 'Recovery phone saved.' : 'Recovery phone cleared.');
 }
 
+async function saveRecoveryEmail() {
+  const result = await api('/api/config/recovery-email', {
+    method: 'PUT',
+    body: JSON.stringify({ recoveryEmail: els.recoveryEmail.value.trim() }),
+  });
+  if (state.config) state.config.recoveryEmail = result.recoveryEmail || '';
+  if (els.recoveryEmail) els.recoveryEmail.value = result.recoveryEmail || '';
+  showConfigMessage(result.recoveryEmail ? 'Recovery email saved.' : 'Recovery email cleared.');
+}
+
 async function testTwilioConfig() {
   const body = {};
   if (els.twilioAccountSid.value.trim()) body.accountSid = els.twilioAccountSid.value.trim();
@@ -699,6 +744,37 @@ async function saveTwilioConfig() {
   });
   if (result.test) renderNotice(els.twilioTestResult, result.test);
   showConfigMessage(result.twilioConfigured ? 'Twilio settings saved and connected.' : 'Twilio settings saved.');
+  await loadAll();
+}
+
+function emailConfigBody({ includeTest = false } = {}) {
+  const body = {
+    host: els.emailHost.value.trim(),
+    port: Number(els.emailPort.value || 587),
+    secure: els.emailSecure.checked,
+    user: els.emailUser.value.trim(),
+    from: els.emailFrom.value.trim(),
+  };
+  if (els.emailPass.value) body.pass = els.emailPass.value;
+  if (includeTest) body.test = false;
+  return body;
+}
+
+async function testEmailConfig() {
+  const result = await api('/api/config/email/test', {
+    method: 'POST',
+    body: JSON.stringify(emailConfigBody()),
+  });
+  renderNotice(els.emailTestResult, result);
+}
+
+async function saveEmailConfig() {
+  const result = await api('/api/config/email', {
+    method: 'PUT',
+    body: JSON.stringify(emailConfigBody({ includeTest: true })),
+  });
+  if (result.test && result.test.ok === false) renderNotice(els.emailTestResult, result.test);
+  showConfigMessage(result.emailConfigured ? 'Email settings saved and connected.' : 'Email settings saved.');
   await loadAll();
 }
 
@@ -880,10 +956,19 @@ els.recoveryPhoneForm.addEventListener('submit', event => {
   event.preventDefault();
   saveRecoveryPhone().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
+els.recoveryEmailForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveRecoveryEmail().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
 els.testTwilioConfig.addEventListener('click', () => testTwilioConfig().catch(err => renderNotice(els.twilioTestResult, { ok: false, error: friendlyError(err) })));
 els.twilioConfigForm.addEventListener('submit', event => {
   event.preventDefault();
   saveTwilioConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.testEmailConfig.addEventListener('click', () => testEmailConfig().catch(err => renderNotice(els.emailTestResult, { ok: false, error: friendlyError(err) })));
+els.emailConfigForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveEmailConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
 els.adminPasswordForm.addEventListener('submit', event => {
   event.preventDefault();

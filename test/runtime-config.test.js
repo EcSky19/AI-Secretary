@@ -106,8 +106,10 @@ test('setup completion state and status expose documented keys', () => {
   assert.deepEqual(Object.keys(status).sort(), [
     'adminConfigured',
     'businessName',
+    'emailConfigured',
     'passwordEnvManaged',
     'publicBaseUrl',
+    'recoveryEmailSet',
     'recoveryPhoneSet',
     'setupComplete',
     'smsFromNumber',

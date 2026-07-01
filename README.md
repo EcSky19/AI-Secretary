@@ -10,7 +10,7 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 - SMS confirmations, cancellation notices, and appointment reminders.
 - Open-days and blackout-date controls for days you are closed.
 - iCal calendar feed for Google, Apple, and Outlook calendars.
-- Admin login protection, plus self-service password reset by text message and a recovery script for forgotten passwords.
+- Admin login protection, plus self-service password reset by text message or email and a recovery script for forgotten passwords.
 - In-browser first-run setup wizard for business hours, login, Twilio, and phone number setup.
 - SQLite-backed schedule storage using built-in `node:sqlite`.
 - Automatic and manual database backups.
@@ -123,18 +123,20 @@ Run `node scripts/restore.js` without a file name to list available backups. To 
 
 Two ways to recover a forgotten dashboard password:
 
-**1. Self-service reset by text message (no technical access needed).**
-If a recovery mobile number is on file and Twilio SMS is connected, the owner can
-reset their own password from the browser:
+**1. Self-service reset by text message or email (no technical access needed).**
+If a recovery contact is on file, the owner can reset their own password from the
+browser:
 
 1. Go to `/forgot.html` (a "Forgot password?" link is on the setup page).
-2. Tap **Text me a reset code** — a 6-digit code is sent to the recovery phone.
-3. Enter the code and a new password.
+2. Choose how to receive the code — **text message** (needs a recovery phone + Twilio SMS) or **email** (needs a recovery email + email/SMTP connected).
+3. A 6-digit code is sent to that contact.
+4. Enter the code and a new password.
 
 Codes are single-use, expire after 10 minutes, and are rate-limited. Set or update
-the recovery number any time from the dashboard's **Settings** (Recovery phone),
-or during first-run setup. This flow is disabled when the password is pinned via the
-`ADMIN_PASSWORD` environment variable (change that variable instead).
+the recovery phone, recovery email, and email (SMTP) connection any time from the
+dashboard's **Settings**, or during first-run setup. This flow is disabled when the
+password is pinned via the `ADMIN_PASSWORD` environment variable (change that
+variable instead).
 
 **2. Command-line reset (for hosts with server/terminal access).**
 Use this when text-message reset is unavailable (no recovery number or SMS not connected):

@@ -4,15 +4,17 @@ const crypto = require('crypto');
 const db = require('./db');
 const runtimeConfig = require('./runtime-config');
 const notify = require('./notify');
+const email = require('./email');
 
 // ---------------------------------------------------------------------------
-// Forgot-password / self-service admin reset by SMS.
+// Forgot-password / self-service admin reset.
 //
-// A locked-out owner requests a one-time code, which is texted to the recovery
-// phone number they saved earlier. They enter the code plus a new password to
-// regain access. This works entirely from the browser, so non-technical
-// operators never need terminal/CLI access. Codes are single-use, short-lived,
-// hashed at rest, and rate-limited by an attempt counter.
+// A locked-out owner requests a one-time code, delivered to a recovery contact
+// they saved earlier — by SMS text or by email, whichever they prefer and have
+// configured. They enter the code plus a new password to regain access. This
+// works entirely from the browser, so non-technical operators never need
+// terminal/CLI access. Codes are single-use, short-lived, hashed at rest, and
+// rate-limited by an attempt counter.
 // ---------------------------------------------------------------------------
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -41,8 +43,8 @@ function clearReset() {
   db.setSetting(K_ATTEMPTS, '0');
 }
 
-// Whether SMS-based reset can work at all for this install.
-function resetAvailability() {
+// Availability of the SMS reset channel.
+function smsAvailability() {
   if (runtimeConfig.isPasswordEnvManaged()) return { available: false, reason: 'env-managed' };
   if (!runtimeConfig.isAdminConfiguredViaDb()) return { available: false, reason: 'not-configured' };
   if (!runtimeConfig.getRecoveryPhone()) return { available: false, reason: 'no-recovery-phone' };
@@ -50,21 +52,49 @@ function resetAvailability() {
   return { available: true, reason: 'ok' };
 }
 
-// Request a reset code. Returns { ok, reason, maskedPhone } and, on success,
-// texts a fresh code to the recovery phone.
-async function requestReset() {
-  const availability = resetAvailability();
+// Availability of the email reset channel.
+function emailAvailability() {
+  if (runtimeConfig.isPasswordEnvManaged()) return { available: false, reason: 'env-managed' };
+  if (!runtimeConfig.isAdminConfiguredViaDb()) return { available: false, reason: 'not-configured' };
+  if (!runtimeConfig.getRecoveryEmail()) return { available: false, reason: 'no-recovery-email' };
+  if (!email.isEmailEnabled()) return { available: false, reason: 'email-unavailable' };
+  return { available: true, reason: 'ok' };
+}
+
+// Availability of each channel plus an overall summary.
+function resetAvailability() {
+  const sms = smsAvailability();
+  const emailCh = emailAvailability();
+  const available = sms.available || emailCh.available;
+  // A representative reason for the whole feature (used for a single message).
+  let reason = 'ok';
+  if (!available) {
+    if (runtimeConfig.isPasswordEnvManaged()) reason = 'env-managed';
+    else if (!runtimeConfig.isAdminConfiguredViaDb()) reason = 'not-configured';
+    else reason = 'no-channel';
+  }
+  return {
+    available,
+    reason,
+    channels: { sms, email: emailCh },
+  };
+}
+
+// Request a reset code over the chosen channel ('sms' or 'email'). Returns
+// { ok, reason, channel, maskedTarget } and, on success, sends a fresh code.
+async function requestReset(channel = 'sms') {
+  const ch = channel === 'email' ? 'email' : 'sms';
+  const availability = ch === 'email' ? emailAvailability() : smsAvailability();
   if (!availability.available) {
-    return { ok: false, reason: availability.reason };
+    return { ok: false, reason: availability.reason, channel: ch };
   }
 
   const lastSent = Number(db.getSetting(K_LAST_SENT) || 0);
   if (lastSent && Date.now() - lastSent < RESEND_COOLDOWN_MS) {
     const retryAfter = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - lastSent)) / 1000);
-    return { ok: false, reason: 'cooldown', retryAfter };
+    return { ok: false, reason: 'cooldown', retryAfter, channel: ch };
   }
 
-  const phone = runtimeConfig.getRecoveryPhone();
   const code = generateCode();
   db.setSetting(K_HASH, hashCode(code));
   db.setSetting(K_EXPIRES, String(Date.now() + CODE_TTL_MS));
@@ -72,18 +102,27 @@ async function requestReset() {
   db.setSetting(K_LAST_SENT, String(Date.now()));
 
   const business = runtimeConfig.getBusinessName();
-  const result = await notify.sendSms(
-    phone,
-    `${business} password reset code: ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`
-  );
+  const body = `${business} password reset code: ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`;
+
+  let result;
+  let maskedTarget;
+  if (ch === 'email') {
+    const to = runtimeConfig.getRecoveryEmail();
+    maskedTarget = runtimeConfig.maskEmail(to);
+    result = await email.sendEmail(to, `${business} password reset code`, body);
+  } else {
+    const to = runtimeConfig.getRecoveryPhone();
+    maskedTarget = runtimeConfig.maskPhone(to);
+    result = await notify.sendSms(to, body);
+  }
 
   if (!result.sent) {
     // Don't leave a live code around if we couldn't deliver it.
     clearReset();
-    return { ok: false, reason: 'send-failed' };
+    return { ok: false, reason: 'send-failed', channel: ch };
   }
 
-  return { ok: true, maskedPhone: runtimeConfig.maskPhone(phone) };
+  return { ok: true, channel: ch, maskedTarget, maskedPhone: maskedTarget };
 }
 
 // Verify a submitted code and set a new admin password.
@@ -134,6 +173,8 @@ async function verifyAndReset(code, newPassword) {
 
 module.exports = {
   resetAvailability,
+  smsAvailability,
+  emailAvailability,
   requestReset,
   verifyAndReset,
   // exported for tests

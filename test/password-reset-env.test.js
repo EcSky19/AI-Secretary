@@ -49,6 +49,10 @@ test('environment-managed admin passwords disable SMS reset', async () => {
   assert.deepEqual(passwordReset.resetAvailability(), {
     available: false,
     reason: 'env-managed',
+    channels: {
+      sms: { available: false, reason: 'env-managed' },
+      email: { available: false, reason: 'env-managed' },
+    },
   });
   assert.deepEqual(await passwordReset.verifyAndReset('123456', 'whatever1'), {
     ok: false,

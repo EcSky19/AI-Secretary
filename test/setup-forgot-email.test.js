@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 
 const testDbPath = path.join(
   __dirname,
-  `.secretary-setup-forgot-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
+  `.secretary-setup-forgot-email-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
 );
 process.env.DATABASE_PATH = testDbPath;
 process.env.TWILIO_VALIDATE_SIGNATURE = 'false';
@@ -17,13 +17,16 @@ process.env.TWILIO_PHONE_NUMBER = '';
 process.env.ADMIN_USER = '';
 process.env.ADMIN_PASSWORD = '';
 process.env.ADMIN_TOKEN = '';
+process.env.SMTP_HOST = '';
+process.env.SMTP_FROM = '';
+process.env.EMAIL_FROM = '';
 
-const notify = require('../src/notify');
-let lastSms = null;
-notify.isSmsEnabled = () => true;
-notify.sendSms = async (to, body) => {
-  lastSms = { to, body };
-  return { sent: true, sid: 'SM_TEST' };
+const email = require('../src/email');
+let lastEmail = null;
+email.isEmailEnabled = () => true;
+email.sendEmail = async (to, subject, body) => {
+  lastEmail = { to, subject, body };
+  return { sent: true, id: 'MSG_TEST' };
 };
 
 const app = require('../server');
@@ -58,9 +61,9 @@ async function request(pathname, options = {}) {
 }
 
 function capturedCode() {
-  assert.ok(lastSms, 'expected reset SMS to be sent');
-  const match = lastSms.body.match(/code:\s*(\d{6})/);
-  assert.ok(match, `expected SMS body to contain a six-digit code: ${lastSms.body}`);
+  assert.ok(lastEmail, 'expected reset email to be sent');
+  const match = lastEmail.body.match(/code:\s*(\d{6})/);
+  assert.ok(match, `expected email body to contain a six-digit code: ${lastEmail.body}`);
   return match[1];
 }
 
@@ -74,7 +77,7 @@ before(async () => {
       businessName: 'AI Scheduler',
       adminUser: 'admin',
       adminPassword: 'secret1',
-      recoveryPhone: '+15551234567',
+      recoveryEmail: 'owner@example.com',
     },
   });
   assert.equal(setup.response.status, 200);
@@ -89,32 +92,42 @@ after(async () => {
   removeIfExists(`${testDbPath}-shm`);
 });
 
-test('reset-status reports SMS reset is available', async () => {
-  const status = await request('/api/setup/reset-status');
-  assert.equal(status.response.status, 200);
-  assert.equal(status.body.available, true);
-  assert.equal(status.body.reason, 'ok');
-  assert.equal(status.body.channels.sms.available, true);
-  assert.equal(status.body.channels.sms.reason, 'ok');
-  assert.equal(status.body.channels.email.available, false);
-  assert.equal(status.body.channels.email.reason, 'no-recovery-email');
+test('email config endpoint stores SMTP settings without exposing plaintext password', async () => {
+  const update = await request('/api/config/email', {
+    method: 'PUT',
+    headers: { authorization: basicAuth() },
+    body: { host: 'smtp.x.com', from: 'a@x.com', pass: 'smtp-secret', test: false },
+  });
+  assert.equal(update.response.status, 200);
+  assert.equal(update.body.ok, true);
+  assert.equal(update.body.emailConfigured, true);
+
+  const config = await request('/api/config', {
+    headers: { authorization: basicAuth() },
+  });
+  assert.equal(config.response.status, 200);
+  assert.equal(config.body.email.host, 'smtp.x.com');
+  assert.equal(config.body.email.from, 'a@x.com');
+  assert.equal(config.body.email.hasPassword, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(config.body.email, 'pass'), false);
 });
 
-test('forgot and reset endpoints reject wrong code, accept real code, and update auth', async () => {
-  const forgot = await request('/api/setup/forgot', { method: 'POST', body: {} });
+test('email forgot and reset endpoints send a code and update auth', async () => {
+  const status = await request('/api/setup/reset-status');
+  assert.equal(status.response.status, 200);
+  assert.equal(status.body.channels.email.available, true);
+  assert.equal(status.body.channels.email.reason, 'ok');
+
+  const forgot = await request('/api/setup/forgot', {
+    method: 'POST',
+    body: { channel: 'email' },
+  });
   assert.equal(forgot.response.status, 200);
   assert.equal(forgot.body.ok, true);
-  assert.equal(forgot.body.maskedPhone, '••• ••• 4567');
-  assert.equal(lastSms.to, '+15551234567');
+  assert.equal(forgot.body.channel, 'email');
+  assert.equal(forgot.body.maskedTarget, 'o••••@example.com');
+  assert.equal(lastEmail.to, 'owner@example.com');
   const code = capturedCode();
-
-  const wrong = await request('/api/setup/reset', {
-    method: 'POST',
-    body: { code: '000000', newPassword: 'brandnew1' },
-  });
-  assert.equal(wrong.response.status, 400);
-  assert.equal(wrong.body.ok, false);
-  assert.equal(wrong.body.reason, 'invalid-code');
 
   const reset = await request('/api/setup/reset', {
     method: 'POST',
@@ -132,11 +145,4 @@ test('forgot and reset endpoints reject wrong code, accept real code, and update
     headers: { authorization: basicAuth('admin', 'secret1') },
   });
   assert.equal(oldPassword.response.status, 401);
-});
-
-test('forgot endpoint returns HTTP 429 during cooldown', async () => {
-  const forgot = await request('/api/setup/forgot', { method: 'POST', body: {} });
-  assert.equal(forgot.response.status, 429);
-  assert.equal(forgot.body.ok, false);
-  assert.equal(forgot.body.reason, 'cooldown');
 });

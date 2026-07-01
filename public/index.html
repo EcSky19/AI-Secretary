@@ -107,6 +107,13 @@
         </label>
         <button type="submit" class="secondary full">Save recovery phone</button>
       </form>
+      <form id="recovery-email-form" class="form-stack config-form">
+        <label>Recovery email (for password reset)
+          <input id="recovery-email" type="email" autocomplete="email" placeholder="owner@example.com">
+          <span class="field-help">We can also email you a reset code. Use an inbox you always control.</span>
+        </label>
+        <button type="submit" class="secondary full">Save recovery email</button>
+      </form>
       <form id="twilio-config-form" class="form-stack config-form">
         <div id="twilio-status" class="notice info">Loading phone connection�</div>
         <label>Twilio Account SID
@@ -122,6 +129,37 @@
         <div class="button-row">
           <button type="button" id="test-twilio-config" class="secondary">Test connection</button>
           <button type="submit" class="primary">Save Twilio</button>
+        </div>
+      </form>
+      <form id="email-config-form" class="form-stack config-form">
+        <div id="email-status" class="notice info">Loading email connection…</div>
+        <p class="hint">Email powers “email me a reset code.” Many providers need an app password instead of your regular inbox password.</p>
+        <label>SMTP host
+          <input id="email-host" autocomplete="off" placeholder="smtp.example.com">
+        </label>
+        <div class="time-pair">
+          <label>SMTP port
+            <input id="email-port" type="number" min="0" max="65535" step="1" placeholder="587">
+          </label>
+          <label class="inline-checkbox">
+            <input id="email-secure" type="checkbox">
+            <span>Use TLS/secure</span>
+          </label>
+        </div>
+        <label>SMTP username
+          <input id="email-user" autocomplete="username" placeholder="owner@example.com">
+        </label>
+        <label>SMTP password
+          <input id="email-pass" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
+          <span id="email-pass-help" class="field-help"></span>
+        </label>
+        <label>From address
+          <input id="email-from" type="email" autocomplete="email" placeholder="noreply@example.com">
+        </label>
+        <div id="email-test-result" class="notice info" hidden></div>
+        <div class="button-row">
+          <button type="button" id="test-email-config" class="secondary">Test connection</button>
+          <button type="submit" class="primary">Save email</button>
         </div>
       </form>
       <form id="admin-password-form" class="form-stack config-form">

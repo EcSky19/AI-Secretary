@@ -9,6 +9,7 @@ const router = express.Router();
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const PHONE_RE = /^\+?[0-9][0-9\s().-]{5,}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Public onboarding endpoints. Mounted BEFORE admin auth so a brand-new,
 // unconfigured install can be set up from the browser. Once an admin password
@@ -52,6 +53,13 @@ router.post('/profile', express.json(), (req, res) => {
     }
   }
 
+  const recoveryEmail = body.recoveryEmail === undefined ? undefined : String(body.recoveryEmail || '').trim();
+  if (recoveryEmail) {
+    if (!EMAIL_RE.test(recoveryEmail)) {
+      return res.status(400).json({ error: 'recoveryEmail must be a valid email address.' });
+    }
+  }
+
   let lengthMinutes;
   if (body.appointmentLengthMinutes !== undefined) {
     lengthMinutes = Number(body.appointmentLengthMinutes);
@@ -65,6 +73,7 @@ router.post('/profile', express.json(), (req, res) => {
   if (end !== undefined) db.setSetting('business_hours_end', end);
   if (lengthMinutes !== undefined) db.setSetting('appointment_length_minutes', String(lengthMinutes));
   if (recoveryPhone) runtimeConfig.setRecoveryPhone(recoveryPhone);
+  if (recoveryEmail) runtimeConfig.setRecoveryEmail(recoveryEmail);
 
   runtimeConfig.setAdminCredentials({ user: adminUser, password: adminPassword });
   runtimeConfig.markSetupComplete();
@@ -72,47 +81,71 @@ router.post('/profile', express.json(), (req, res) => {
   return res.json({ ok: true, authRequired: true, status: runtimeConfig.getSetupStatus() });
 });
 
-// --- Forgot password (public, SMS-based reset) -----------------------------
+// --- Forgot password (public, self-service reset) --------------------------
 
 const RESET_MESSAGES = {
   'env-managed':
     'This login is managed by your hosting configuration. Update the ADMIN_PASSWORD environment variable to change it.',
   'not-configured': 'No account password is set yet. Finish first-run setup instead.',
+  'no-channel':
+    'No recovery contact is set up. Ask whoever set this up to add a recovery phone or email, or use the reset-admin command on the server.',
   'no-recovery-phone':
     'No recovery phone number is on file. Ask whoever set this up to add one, or use the reset-admin command on the server.',
   'sms-unavailable':
     'Text messaging is not connected, so a code cannot be sent. Connect Twilio first, or use the reset-admin command on the server.',
-  'send-failed': 'We could not send the text message. Check your Twilio setup and try again.',
+  'no-recovery-email':
+    'No recovery email is on file. Ask whoever set this up to add one, or use the reset-admin command on the server.',
+  'email-unavailable':
+    'Email is not connected, so a code cannot be sent. Set up email (SMTP) first, or use the reset-admin command on the server.',
+  'send-failed': 'We could not send the reset code. Check your Twilio/email setup and try again.',
   cooldown: 'A code was just sent. Please wait a moment before requesting another.',
 };
 
-// Report whether SMS-based reset is possible, so the UI can show guidance.
+function channelInfo(availability) {
+  return {
+    available: availability.available,
+    reason: availability.reason,
+    message: availability.available ? '' : RESET_MESSAGES[availability.reason] || '',
+  };
+}
+
+// Report whether reset is possible and which channels are available.
 router.get('/reset-status', (req, res) => {
   const availability = passwordReset.resetAvailability();
   res.json({
     available: availability.available,
     reason: availability.reason,
     message: availability.available ? '' : RESET_MESSAGES[availability.reason] || '',
+    channels: {
+      sms: channelInfo(availability.channels.sms),
+      email: channelInfo(availability.channels.email),
+    },
   });
 });
 
-// Request a reset code by SMS.
+// Request a reset code by SMS or email (body: { channel: 'sms' | 'email' }).
 router.post('/forgot', express.json(), async (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const channel = body.channel === 'email' ? 'email' : 'sms';
   try {
-    const result = await passwordReset.requestReset();
+    const result = await passwordReset.requestReset(channel);
     if (!result.ok) {
       const status = result.reason === 'cooldown' ? 429 : 400;
       return res.status(status).json({
         ok: false,
         reason: result.reason,
+        channel: result.channel,
         retryAfter: result.retryAfter,
         error: RESET_MESSAGES[result.reason] || 'Unable to send a reset code right now.',
       });
     }
+    const via = result.channel === 'email' ? 'email' : 'phone';
     return res.json({
       ok: true,
+      channel: result.channel,
+      maskedTarget: result.maskedTarget,
       maskedPhone: result.maskedPhone,
-      message: `We sent a 6-digit code to the phone ending in ${result.maskedPhone}.`,
+      message: `We sent a 6-digit code to the ${via} ${result.maskedTarget}.`,
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Unexpected error sending the reset code.' });
@@ -130,7 +163,7 @@ router.post('/reset', express.json(), async (req, res) => {
         'invalid-code':
           result.attemptsLeft !== undefined
             ? `That code is incorrect. ${result.attemptsLeft} attempt(s) left.`
-            : 'Enter the 6-digit code from the text message.',
+            : 'Enter the 6-digit code we sent you.',
         'weak-password': 'Your new password must be at least 6 characters.',
         'no-code': 'Request a code first, then enter it here.',
         expired: 'That code has expired. Request a new one.',

@@ -88,26 +88,32 @@ after(() => {
 });
 
 test('resetAvailability reports each unavailable reason and the available state', () => {
-  assert.deepEqual(passwordReset.resetAvailability(), {
-    available: false,
-    reason: 'not-configured',
-  });
+  let availability = passwordReset.resetAvailability();
+  assert.equal(availability.available, false);
+  assert.equal(availability.reason, 'not-configured');
+  assert.deepEqual(availability.channels.sms, { available: false, reason: 'not-configured' });
+  assert.deepEqual(passwordReset.smsAvailability(), { available: false, reason: 'not-configured' });
 
   runtimeConfig.setAdminCredentials({ user: 'admin', password: 'old' });
-  assert.deepEqual(passwordReset.resetAvailability(), {
-    available: false,
-    reason: 'no-recovery-phone',
-  });
+  availability = passwordReset.resetAvailability();
+  assert.equal(availability.available, false);
+  assert.equal(availability.reason, 'no-channel');
+  assert.deepEqual(availability.channels.sms, { available: false, reason: 'no-recovery-phone' });
+  assert.deepEqual(passwordReset.smsAvailability(), { available: false, reason: 'no-recovery-phone' });
 
   runtimeConfig.setRecoveryPhone('+15551234567');
   notify.isSmsEnabled = () => false;
-  assert.deepEqual(passwordReset.resetAvailability(), {
-    available: false,
-    reason: 'sms-unavailable',
-  });
+  availability = passwordReset.resetAvailability();
+  assert.equal(availability.available, false);
+  assert.equal(availability.reason, 'no-channel');
+  assert.deepEqual(availability.channels.sms, { available: false, reason: 'sms-unavailable' });
+  assert.deepEqual(passwordReset.smsAvailability(), { available: false, reason: 'sms-unavailable' });
 
   notify.isSmsEnabled = () => true;
-  assert.deepEqual(passwordReset.resetAvailability(), { available: true, reason: 'ok' });
+  availability = passwordReset.resetAvailability();
+  assert.equal(availability.available, true);
+  assert.equal(availability.reason, 'ok');
+  assert.deepEqual(availability.channels.sms, { available: true, reason: 'ok' });
 });
 
 test('requestReset sends a code and verifyAndReset changes the admin password once', async () => {

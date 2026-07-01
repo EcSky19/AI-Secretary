@@ -48,6 +48,46 @@ function setRecoveryPhone(phone) {
   db.setSetting('recovery_phone', String(phone || '').trim());
 }
 
+// --- Recovery email (for password reset by email) --------------------------
+
+function getRecoveryEmail() {
+  return db.getSetting('recovery_email') || '';
+}
+function setRecoveryEmail(email) {
+  db.setSetting('recovery_email', String(email || '').trim());
+}
+
+// --- Email / SMTP settings -------------------------------------------------
+
+function getEmailConfig() {
+  const env = config.email;
+  const port = env.port || parseInt(db.getSetting('smtp_port'), 10) || 0;
+  const secureSetting = db.getSetting('smtp_secure');
+  return {
+    host: env.host || db.getSetting('smtp_host') || '',
+    port,
+    secure: env.host ? env.secure : secureSetting === '1' || port === 465,
+    user: env.user || db.getSetting('smtp_user') || '',
+    pass: env.pass || db.getSetting('smtp_pass') || '',
+    from: env.from || db.getSetting('smtp_from') || '',
+  };
+}
+
+function isEmailConfigured() {
+  const { host, from } = getEmailConfig();
+  return Boolean(host && from);
+}
+
+function setEmailConfig({ host, port, secure, user, pass, from } = {}) {
+  if (host !== undefined) db.setSetting('smtp_host', String(host || '').trim());
+  if (port !== undefined) db.setSetting('smtp_port', String(parseInt(port, 10) || 0));
+  if (secure !== undefined) db.setSetting('smtp_secure', secure ? '1' : '0');
+  if (user !== undefined) db.setSetting('smtp_user', String(user || '').trim());
+  if (pass !== undefined) db.setSetting('smtp_pass', String(pass || ''));
+  if (from !== undefined) db.setSetting('smtp_from', String(from || '').trim());
+  notifyChange();
+}
+
 // Mask a phone number for display, revealing only the last 4 digits.
 function maskPhone(phone) {
   const s = String(phone || '').trim();
@@ -56,6 +96,17 @@ function maskPhone(phone) {
   if (digits.length <= 4) return '••••';
   const last4 = digits.slice(-4);
   return `••• ••• ${last4}`;
+}
+
+// Mask an email address, revealing the first character and the domain.
+function maskEmail(email) {
+  const s = String(email || '').trim();
+  const at = s.indexOf('@');
+  if (at <= 0) return s ? '•••' : '';
+  const name = s.slice(0, at);
+  const domain = s.slice(at);
+  const shown = name.slice(0, 1);
+  return `${shown}${'•'.repeat(Math.max(1, name.length - 1))}${domain}`;
 }
 
 // True when the admin password is pinned via environment variable. In that case
@@ -194,6 +245,8 @@ function getSetupStatus() {
     publicBaseUrl: config.publicBaseUrl,
     usingLocalhost: /localhost|127\.0\.0\.1/.test(config.publicBaseUrl || ''),
     recoveryPhoneSet: Boolean(getRecoveryPhone()),
+    recoveryEmailSet: Boolean(getRecoveryEmail()),
+    emailConfigured: isEmailConfigured(),
     passwordEnvManaged: isPasswordEnvManaged(),
   };
 }
@@ -204,7 +257,13 @@ module.exports = {
   setBusinessName,
   getRecoveryPhone,
   setRecoveryPhone,
+  getRecoveryEmail,
+  setRecoveryEmail,
+  getEmailConfig,
+  setEmailConfig,
+  isEmailConfigured,
   maskPhone,
+  maskEmail,
   isPasswordEnvManaged,
   getTwilioCredentials,
   isTwilioConfigured,

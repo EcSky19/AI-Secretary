@@ -67,6 +67,17 @@ const config = {
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX, 10) || 120,
   },
+
+  // Optional outbound email (SMTP) for password reset by email. Owners can also
+  // configure this from the dashboard; environment variables take precedence.
+  email: {
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT, 10) || 0,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '',
+  },
 };
 
 module.exports = config;

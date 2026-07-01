@@ -298,6 +298,13 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 }
 .config-form { margin-top: 16px; }
 .field-help { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.inline-checkbox {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 28px;
+}
+.inline-checkbox input { width: auto; }
 .setup-hero { padding-bottom: 12px; }
 .setup-shell {
   display: grid;
@@ -333,6 +340,15 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
   padding: 10px 14px;
   text-decoration: none;
 }
+.reset-channel-list { display: grid; gap: 10px; }
+.reset-channel-choice {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  font-weight: 750;
+}
+.reset-channel-choice input { margin-top: 3px; width: auto; }
+.reset-channel-choice span { display: grid; gap: 3px; }
 @media (max-width: 620px) {
   .setup-steps { grid-template-columns: 1fr 1fr; }
 }

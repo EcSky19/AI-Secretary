@@ -3,6 +3,7 @@
 const express = require('express');
 const db = require('./db');
 const notify = require('./notify');
+const email = require('./email');
 const scheduling = require('./scheduling');
 const twilioNumbers = require('./twilio-numbers');
 const runtimeConfig = require('./runtime-config');
@@ -395,6 +396,13 @@ router.get('/config', asyncHandler((req, res) => {
     smsFromNumber: creds.phoneNumber,
     hasAuthToken: Boolean(creds.authToken),
     recoveryPhone: runtimeConfig.getRecoveryPhone(),
+    recoveryEmail: runtimeConfig.getRecoveryEmail(),
+    emailConfigured: runtimeConfig.isEmailConfigured(),
+    email: (() => {
+      const e = runtimeConfig.getEmailConfig();
+      // Never return the SMTP password; expose only whether one is set.
+      return { host: e.host, port: e.port, secure: e.secure, user: e.user, from: e.from, hasPassword: Boolean(e.pass) };
+    })(),
     setup: runtimeConfig.getSetupStatus(),
   });
 }));
@@ -454,6 +462,54 @@ router.put('/config/recovery-phone', asyncHandler((req, res) => {
   }
   runtimeConfig.setRecoveryPhone(phone);
   res.json({ ok: true, recoveryPhone: runtimeConfig.getRecoveryPhone() });
+}));
+
+router.put('/config/recovery-email', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  const addr = body.recoveryEmail === undefined ? '' : String(body.recoveryEmail || '').trim();
+  if (addr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+    throw httpError(400, 'recoveryEmail must be a valid email address.');
+  }
+  runtimeConfig.setRecoveryEmail(addr);
+  res.json({ ok: true, recoveryEmail: runtimeConfig.getRecoveryEmail() });
+}));
+
+router.put('/config/email', asyncHandler(async (req, res) => {
+  const body = requireBody(req);
+  const host = body.host !== undefined ? String(body.host).trim() : undefined;
+  const port = body.port !== undefined ? Number(body.port) : undefined;
+  const secure = body.secure !== undefined ? Boolean(body.secure) : undefined;
+  const user = body.user !== undefined ? String(body.user).trim() : undefined;
+  const pass = body.pass !== undefined ? String(body.pass) : undefined;
+  const from = body.from !== undefined ? String(body.from).trim() : undefined;
+
+  if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) {
+    throw httpError(400, 'port must be a valid port number.');
+  }
+  if (from !== undefined && from && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from)) {
+    throw httpError(400, 'from must be a valid email address.');
+  }
+
+  runtimeConfig.setEmailConfig({ host, port, secure, user, pass, from });
+
+  const result = body.test === false ? { ok: null } : await email.testEmailConfig();
+  res.json({ ok: true, emailConfigured: runtimeConfig.isEmailConfigured(), test: result });
+}));
+
+router.post('/config/email/test', asyncHandler(async (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const overrides =
+    body.host
+      ? {
+          host: String(body.host).trim(),
+          port: Number(body.port) || 587,
+          secure: Boolean(body.secure),
+          user: body.user ? String(body.user).trim() : '',
+          pass: body.pass ? String(body.pass) : '',
+          from: body.from ? String(body.from).trim() : '',
+        }
+      : undefined;
+  res.json(await email.testEmailConfig(overrides));
 }));
 
 // --- Backups (authenticated) ----------------------------------------------

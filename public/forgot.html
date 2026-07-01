@@ -11,7 +11,7 @@
     <div>
       <p class="eyebrow">Password help</p>
       <h1>Reset your password</h1>
-      <p class="subtitle">No technical steps. We’ll text a 6-digit code to the recovery phone saved for this business.</p>
+      <p class="subtitle">No technical steps. We’ll send a 6-digit code to the recovery phone or email saved for this business.</p>
     </div>
   </header>
 
@@ -20,7 +20,7 @@
 
     <section id="reset-unavailable" class="card setup-step" aria-labelledby="reset-unavailable-title" hidden>
       <p class="eyebrow">Can’t send a code yet</p>
-      <h2 id="reset-unavailable-title">Reset by text is not available</h2>
+      <h2 id="reset-unavailable-title">Password reset is not available</h2>
       <p id="reset-unavailable-copy" class="muted"></p>
       <div id="reset-unavailable-help" class="notice info"></div>
       <p class="button-row setup-final-actions">
@@ -31,18 +31,19 @@
 
     <section id="request-step" class="card setup-step" aria-labelledby="request-step-title" hidden>
       <p class="eyebrow">Step 1</p>
-      <h2 id="request-step-title">Text me a reset code</h2>
-      <p class="muted">We’ll send a 6-digit code to the recovery phone on file. Keep this page open after you request it.</p>
+      <h2 id="request-step-title">Send me a reset code</h2>
+      <p id="request-step-copy" class="muted">Choose where we should send your 6-digit code. Keep this page open after you request it.</p>
+      <fieldset id="channel-options" class="settings-fieldset reset-channel-options" aria-describedby="request-step-copy"></fieldset>
       <div class="button-row setup-final-actions">
         <a class="secondary setup-link-button" href="/">Back to dashboard</a>
-        <button type="button" id="send-code" class="primary">Text me a reset code</button>
+        <button type="button" id="send-code" class="primary">Send reset code</button>
       </div>
     </section>
 
     <section id="reset-step" class="card setup-step" aria-labelledby="reset-step-title" hidden>
       <p class="eyebrow">Step 2</p>
       <h2 id="reset-step-title">Enter the code and choose a new password</h2>
-      <p class="muted">Type the 6-digit code from the text message, then choose a password you’ll remember.</p>
+      <p class="muted">Type the 6-digit code we sent, then choose a password you’ll remember.</p>
       <form id="reset-form" class="form-stack">
         <label>6-digit code
           <input id="reset-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="123456">
