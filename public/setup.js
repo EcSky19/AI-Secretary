@@ -103,6 +103,21 @@ async function createProfile() {
     showMessage('Passwords do not match.', 'error');
     return;
   }
+  // Read the step-1 fields fresh from the DOM (they persist while hidden) so a
+  // page reload or skipped capture can't submit an empty business profile.
+  const businessName = (els.businessName.value || '').trim();
+  if (!businessName) {
+    showMessage('Please enter your business name to continue.', 'error');
+    showStep(1);
+    if (els.businessName.focus) els.businessName.focus();
+    return;
+  }
+  setupState.profile = {
+    businessName,
+    businessHoursStart: els.businessStart.value,
+    businessHoursEnd: els.businessEnd.value,
+    appointmentLengthMinutes: Number(els.appointmentLength.value),
+  };
   const user = els.adminUser.value.trim() || 'admin';
   const password = els.adminPassword.value;
   const body = {
