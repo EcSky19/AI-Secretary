@@ -56,11 +56,54 @@ h2 { margin-bottom: 4px; font-size: 1.25rem; }
 .subtitle { max-width: 720px; font-size: 1.05rem; }
 
 .layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 22px;
+  max-width: 1080px;
+  margin: 0 auto;
   padding: 0 clamp(18px, 4vw, 56px) 44px;
 }
+.view { display: grid; gap: 22px; }
+.view[hidden] { display: none !important; }
+
+.main-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 1080px;
+  margin: 0 auto 20px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(219, 229, 245, 0.9);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+.nav-link {
+  flex: 1 1 auto;
+  text-align: center;
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-link:hover { background: rgba(99, 102, 241, 0.08); color: var(--text); }
+.nav-link.active {
+  background: var(--accent, #4f46e5);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.28);
+}
+
+.account-grid { margin: 6px 0 4px; display: grid; gap: 2px; }
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 13px 6px;
+  border-bottom: 1px solid rgba(219, 229, 245, 0.7);
+}
+.account-row:last-child { border-bottom: none; }
+.account-row dt { color: var(--muted); font-weight: 600; margin: 0; }
+.account-row dd { margin: 0; font-weight: 600; word-break: break-word; }
 .card {
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(219, 229, 245, 0.9);
@@ -411,13 +454,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 
 /* Keep the settings panel in view while scrolling the schedule on desktop. */
 @media (min-width: 901px) {
-  .settings-card {
-    align-self: start;
-    position: sticky;
-    top: 16px;
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
-  }
+  .account-row { grid-template-columns: 240px minmax(0, 1fr); }
 }
 
 .app-footer {
@@ -513,6 +550,12 @@ button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 [data-theme="dark"] .settings-group > summary:hover,
 [data-theme="dark"] .collapsible-card > summary:hover { background: rgba(79, 140, 249, 0.08); }
 [data-theme="dark"] .settings-group[open] { border-color: #3a4d70; }
+[data-theme="dark"] .main-nav { background: rgba(19, 28, 46, 0.8); border-color: rgba(42, 55, 80, 0.9); }
+[data-theme="dark"] .nav-link { color: #9fb2cc; }
+[data-theme="dark"] .nav-link:hover { background: rgba(79, 140, 249, 0.12); color: #e8eefb; }
+[data-theme="dark"] .nav-link.active { color: #fff; }
+[data-theme="dark"] .account-row { border-color: rgba(42, 55, 80, 0.7); }
+[data-theme="dark"] .account-row dt { color: #9fb2cc; }
 .reset-channel-choice span { display: grid; gap: 3px; }
 @media (max-width: 620px) {
   .setup-steps { grid-template-columns: 1fr 1fr; }

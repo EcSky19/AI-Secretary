@@ -390,6 +390,7 @@ function renderConfig() {
       ? `Email is connected. ${passwordText}. ${fromText}.`
       : `Email is not connected yet. ${passwordText}. ${fromText}.`;
   }
+  if (typeof window.renderAccount === 'function') window.renderAccount();
 }
 
 function renderBlackoutDates() {
@@ -1099,4 +1100,73 @@ setInterval(() => {
     try { localStorage.setItem('theme', dark ? 'light' : 'dark'); } catch (e) { /* ignore */ }
     syncLabel();
   });
+})();
+
+// --- Hash-routed views (Schedule / Settings / Account) ---------------------
+(function () {
+  var views = {
+    schedule: document.querySelector('#view-schedule'),
+    settings: document.querySelector('#view-settings'),
+    account: document.querySelector('#view-account'),
+  };
+  if (!views.schedule) return;
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
+
+  function maskPhone(value) {
+    if (!value) return '';
+    var d = String(value).replace(/\s+/g, '');
+    return d.length <= 4 ? d : d.slice(0, 2) + '\u2022\u2022\u2022\u2022' + d.slice(-2);
+  }
+  function maskEmail(value) {
+    if (!value) return '';
+    var parts = String(value).split('@');
+    if (parts.length !== 2) return value;
+    var user = parts[0];
+    var shown = user.length <= 2 ? (user[0] || '') : user.slice(0, 2);
+    return shown + '\u2022\u2022\u2022@' + parts[1];
+  }
+
+  function renderAccount() {
+    var c = (typeof state !== 'undefined' && state.config) ? state.config : {};
+    var s = (typeof state !== 'undefined' && state.setupStatus) ? state.setupStatus : {};
+    function set(id, val) {
+      var el = document.querySelector('#' + id);
+      if (el) el.textContent = (val === undefined || val === null || val === '') ? '\u2014' : val;
+    }
+    set('account-business', c.businessName || s.businessName);
+    set('account-admin', c.adminUser || 'admin');
+    set('account-phone', c.smsFromNumber || (c.twilioConfigured ? 'Connected' : 'Not connected'));
+    var voiceLabel = c.voiceName;
+    if (Array.isArray(c.voiceOptions) && c.voiceName) {
+      var opt = c.voiceOptions.filter(function (v) { return v && v.name === c.voiceName; })[0];
+      if (opt) voiceLabel = opt.label || opt.name;
+    }
+    set('account-voice', voiceLabel);
+    var ai = c.aiUnderstanding || {};
+    set('account-ai', ai.enabled ? ('On \u2014 ' + (ai.model || 'configured')) : 'Off \u2014 rule-based understanding');
+    set('account-recovery-phone', maskPhone(c.recoveryPhone) || 'Not set');
+    set('account-recovery-email', maskEmail(c.recoveryEmail) || 'Not set');
+    set('account-email', c.emailConfigured ? 'Configured' : 'Not configured');
+    set('account-url', s.publicBaseUrl || (window.location ? window.location.origin : ''));
+  }
+  window.renderAccount = renderAccount;
+
+  function current() {
+    var name = (location.hash || '').replace(/^#\/?/, '').trim();
+    return views[name] ? name : 'schedule';
+  }
+  function show(name) {
+    Object.keys(views).forEach(function (key) {
+      if (views[key]) views[key].hidden = key !== name;
+    });
+    links.forEach(function (a) {
+      var isActive = a.getAttribute('data-view') === name;
+      a.classList.toggle('active', isActive);
+      a.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+    if (name === 'account') renderAccount();
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+  }
+  window.addEventListener('hashchange', function () { show(current()); });
+  show(current());
 })();

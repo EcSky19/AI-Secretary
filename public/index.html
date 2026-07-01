@@ -32,7 +32,14 @@
     <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">🌙 Dark</button>
   </header>
 
+  <nav class="main-nav" aria-label="Primary">
+    <a href="#/schedule" class="nav-link" data-view="schedule">📅 Schedule</a>
+    <a href="#/settings" class="nav-link" data-view="settings">⚙️ Settings</a>
+    <a href="#/account" class="nav-link" data-view="account">👤 Account</a>
+  </nav>
+
   <main class="layout">
+    <section id="view-schedule" class="view" aria-label="Schedule">
     <section class="card schedule-card" aria-labelledby="schedule-title">
       <div class="card-header">
         <div>
@@ -63,6 +70,33 @@
       <div id="slots" class="slots" aria-live="polite"></div>
     </section>
 
+    <section class="card upcoming-card" aria-labelledby="upcoming-title">
+      <div class="card-header">
+        <div>
+          <h2 id="upcoming-title">Upcoming appointments</h2>
+          <p class="muted">Booked visits from now forward.</p>
+        </div>
+      </div>
+      <div id="upcoming-list" class="stack-list" aria-live="polite"></div>
+    </section>
+
+    <section class="card messages-card" aria-labelledby="messages-title">
+      <div class="card-header">
+        <div>
+          <h2 id="messages-title">Messages inbox <span id="unread-count" class="badge">0 new</span></h2>
+          <p class="muted">Caller notes left for follow-up.</p>
+        </div>
+        <select id="message-filter" aria-label="Message filter">
+          <option value="all">All messages</option>
+          <option value="new">New only</option>
+          <option value="read">Read only</option>
+        </select>
+      </div>
+      <div id="messages-list" class="stack-list" aria-live="polite"></div>
+    </section>
+    </section>
+
+    <section id="view-settings" class="view" hidden aria-label="Settings">
     <aside class="card settings-card" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
       <form id="settings-form" class="form-stack">
@@ -307,30 +341,29 @@
         </div>
       </div>
     </details>
-
-    <section class="card upcoming-card" aria-labelledby="upcoming-title">
-      <div class="card-header">
-        <div>
-          <h2 id="upcoming-title">Upcoming appointments</h2>
-          <p class="muted">Booked visits from now forward.</p>
-        </div>
-      </div>
-      <div id="upcoming-list" class="stack-list" aria-live="polite"></div>
     </section>
 
-    <section class="card messages-card" aria-labelledby="messages-title">
-      <div class="card-header">
-        <div>
-          <h2 id="messages-title">Messages inbox <span id="unread-count" class="badge">0 new</span></h2>
-          <p class="muted">Caller notes left for follow-up.</p>
+    <section id="view-account" class="view" hidden aria-label="Account">
+      <section class="card account-card" aria-labelledby="account-title">
+        <div class="card-header">
+          <div>
+            <h2 id="account-title">Account information</h2>
+            <p class="muted">A summary of your AI Secretary account and connections.</p>
+          </div>
         </div>
-        <select id="message-filter" aria-label="Message filter">
-          <option value="all">All messages</option>
-          <option value="new">New only</option>
-          <option value="read">Read only</option>
-        </select>
-      </div>
-      <div id="messages-list" class="stack-list" aria-live="polite"></div>
+        <dl class="account-grid">
+          <div class="account-row"><dt>Business name</dt><dd id="account-business">—</dd></div>
+          <div class="account-row"><dt>Admin username</dt><dd id="account-admin">—</dd></div>
+          <div class="account-row"><dt>Phone number</dt><dd id="account-phone">—</dd></div>
+          <div class="account-row"><dt>Assistant voice</dt><dd id="account-voice">—</dd></div>
+          <div class="account-row"><dt>AI understanding</dt><dd id="account-ai">—</dd></div>
+          <div class="account-row"><dt>Recovery phone</dt><dd id="account-recovery-phone">—</dd></div>
+          <div class="account-row"><dt>Recovery email</dt><dd id="account-recovery-email">—</dd></div>
+          <div class="account-row"><dt>Email for reset codes</dt><dd id="account-email">—</dd></div>
+          <div class="account-row"><dt>Public URL</dt><dd id="account-url">—</dd></div>
+        </dl>
+        <p class="hint">Need to change something? Head to <a href="#/settings">Settings</a>.</p>
+      </section>
     </section>
   </main>
 
