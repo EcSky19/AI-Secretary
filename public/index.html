@@ -93,105 +93,148 @@
 
       <div class="settings-divider"></div>
       <h2 id="configuration-title">Configuration</h2>
+      <p class="muted config-intro">Set these up once. Open a section to make changes — everything is saved separately.</p>
       <div id="config-message" class="message" role="status" aria-live="polite"></div>
-      <form id="business-config-form" class="form-stack config-form">
-        <label>Business name
-          <input id="config-business-name" maxlength="120" required>
-        </label>
-        <button type="submit" class="secondary full">Save business name</button>
-      </form>
-      <form id="voice-config-form" class="form-stack config-form">
-        <label>Assistant voice
-          <select id="assistant-voice" required></select>
-          <span id="assistant-voice-help" class="field-help">This natural voice is what callers hear when the assistant answers your phone. Changes apply to the next call.</span>
-        </label>
-        <button type="submit" id="save-assistant-voice" class="secondary full">Save assistant voice</button>
-      </form>
-      <form id="ai-understanding-form" class="form-stack config-form">
-        <label>AI understanding (optional)
-          <input id="openai-api-key" type="password" autocomplete="new-password" placeholder="sk-...">
-          <span class="field-help">Leave blank to keep the saved key. Enter a new key to replace it.</span>
-        </label>
-        <label>OpenAI model
-          <input id="openai-model" autocomplete="off" placeholder="gpt-4o-mini">
-          <span id="ai-understanding-help" class="field-help">When configured, callers' requests are understood by an AI model for more natural, flexible phrasing. Without a key, a built-in rule-based parser is used, so the phone line still works.</span>
-        </label>
-        <button type="submit" id="save-ai-understanding" class="secondary full">Save AI understanding</button>
-      </form>
-      <form id="recovery-phone-form" class="form-stack config-form">
-        <label>Recovery phone (for password reset)
-          <input id="recovery-phone" autocomplete="tel" placeholder="+15551234567">
-          <span class="field-help">If you ever forget your password, we'll text a reset code to this number. Use a mobile you control.</span>
-        </label>
-        <button type="submit" class="secondary full">Save recovery phone</button>
-      </form>
-      <form id="recovery-email-form" class="form-stack config-form">
-        <label>Recovery email (for password reset)
-          <input id="recovery-email" type="email" autocomplete="email" placeholder="owner@example.com">
-          <span class="field-help">We can also email you a reset code. Use an inbox you always control.</span>
-        </label>
-        <button type="submit" class="secondary full">Save recovery email</button>
-      </form>
-      <form id="twilio-config-form" class="form-stack config-form">
-        <div id="twilio-status" class="notice info">Loading phone connection�</div>
-        <label>Twilio Account SID
-          <input id="twilio-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
-        </label>
-        <label>Twilio Auth Token
-          <input id="twilio-auth-token" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token">
-        </label>
-        <label>Twilio phone number
-          <input id="twilio-phone-number" autocomplete="tel" placeholder="+15551234567">
-        </label>
-        <div id="twilio-test-result" class="notice info" hidden></div>
-        <div class="button-row">
-          <button type="button" id="test-twilio-config" class="secondary">Test connection</button>
-          <button type="submit" class="primary">Save Twilio</button>
+
+      <details class="settings-group" open>
+        <summary><span class="group-icon" aria-hidden="true">🏢</span> Business profile</summary>
+        <div class="settings-group-body">
+          <form id="business-config-form" class="form-stack config-form">
+            <label>Business name
+              <input id="config-business-name" maxlength="120" required>
+            </label>
+            <button type="submit" class="secondary full">Save business name</button>
+          </form>
         </div>
-      </form>
-      <form id="email-config-form" class="form-stack config-form">
-        <div id="email-status" class="notice info">Loading email connection…</div>
-        <p class="hint">Email powers “email me a reset code.” Many providers need an app password instead of your regular inbox password.</p>
-        <label>SMTP host
-          <input id="email-host" autocomplete="off" placeholder="smtp.example.com">
-        </label>
-        <div class="time-pair">
-          <label>SMTP port
-            <input id="email-port" type="number" min="0" max="65535" step="1" placeholder="587">
-          </label>
-          <label class="inline-checkbox">
-            <input id="email-secure" type="checkbox">
-            <span>Use TLS/secure</span>
-          </label>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">🗣️</span> Assistant voice</summary>
+        <div class="settings-group-body">
+          <form id="voice-config-form" class="form-stack config-form">
+            <label>Assistant voice
+              <select id="assistant-voice" required></select>
+              <span id="assistant-voice-help" class="field-help">This natural voice is what callers hear when the assistant answers your phone. Changes apply to the next call.</span>
+            </label>
+            <button type="submit" id="save-assistant-voice" class="secondary full">Save assistant voice</button>
+          </form>
         </div>
-        <label>SMTP username
-          <input id="email-user" autocomplete="username" placeholder="owner@example.com">
-        </label>
-        <label>SMTP password
-          <input id="email-pass" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
-          <span id="email-pass-help" class="field-help"></span>
-        </label>
-        <label>From address
-          <input id="email-from" type="email" autocomplete="email" placeholder="noreply@example.com">
-        </label>
-        <div id="email-test-result" class="notice info" hidden></div>
-        <div class="button-row">
-          <button type="button" id="test-email-config" class="secondary">Test connection</button>
-          <button type="submit" class="primary">Save email</button>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">🤖</span> AI understanding <span class="group-tag">optional</span></summary>
+        <div class="settings-group-body">
+          <form id="ai-understanding-form" class="form-stack config-form">
+            <label>OpenAI API key
+              <input id="openai-api-key" type="password" autocomplete="new-password" placeholder="sk-...">
+              <span class="field-help">Leave blank to keep the saved key. Enter a new key to replace it.</span>
+            </label>
+            <label>OpenAI model
+              <input id="openai-model" autocomplete="off" placeholder="gpt-4o-mini">
+              <span id="ai-understanding-help" class="field-help">When configured, callers' requests are understood by an AI model for more natural, flexible phrasing. Without a key, a built-in rule-based parser is used, so the phone line still works.</span>
+            </label>
+            <button type="submit" id="save-ai-understanding" class="secondary full">Save AI understanding</button>
+          </form>
         </div>
-      </form>
-      <form id="admin-password-form" class="form-stack config-form">
-        <label>Admin username
-          <input id="admin-user" autocomplete="username" required>
-        </label>
-        <label>New admin password
-          <input id="admin-password" type="password" autocomplete="new-password" minlength="6" required>
-        </label>
-        <label>Confirm new password
-          <input id="admin-password-confirm" type="password" autocomplete="new-password" minlength="6" required>
-        </label>
-        <button type="submit" class="secondary full">Change login</button>
-      </form>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">📞</span> Phone line (Twilio)</summary>
+        <div class="settings-group-body">
+          <form id="twilio-config-form" class="form-stack config-form">
+            <div id="twilio-status" class="notice info">Loading phone connection…</div>
+            <label>Twilio Account SID
+              <input id="twilio-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            </label>
+            <label>Twilio Auth Token
+              <input id="twilio-auth-token" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token">
+            </label>
+            <label>Twilio phone number
+              <input id="twilio-phone-number" autocomplete="tel" placeholder="+15551234567">
+            </label>
+            <div id="twilio-test-result" class="notice info" hidden></div>
+            <div class="button-row">
+              <button type="button" id="test-twilio-config" class="secondary">Test connection</button>
+              <button type="submit" class="primary">Save Twilio</button>
+            </div>
+          </form>
+        </div>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">🔑</span> Password recovery</summary>
+        <div class="settings-group-body">
+          <form id="recovery-phone-form" class="form-stack config-form">
+            <label>Recovery phone (for password reset)
+              <input id="recovery-phone" autocomplete="tel" placeholder="+15551234567">
+              <span class="field-help">If you ever forget your password, we'll text a reset code to this number. Use a mobile you control.</span>
+            </label>
+            <button type="submit" class="secondary full">Save recovery phone</button>
+          </form>
+          <form id="recovery-email-form" class="form-stack config-form">
+            <label>Recovery email (for password reset)
+              <input id="recovery-email" type="email" autocomplete="email" placeholder="owner@example.com">
+              <span class="field-help">We can also email you a reset code. Use an inbox you always control.</span>
+            </label>
+            <button type="submit" class="secondary full">Save recovery email</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">✉️</span> Email (for reset codes)</summary>
+        <div class="settings-group-body">
+          <form id="email-config-form" class="form-stack config-form">
+            <div id="email-status" class="notice info">Loading email connection…</div>
+            <p class="hint">Email powers “email me a reset code.” Many providers need an app password instead of your regular inbox password.</p>
+            <label>SMTP host
+              <input id="email-host" autocomplete="off" placeholder="smtp.example.com">
+            </label>
+            <div class="time-pair">
+              <label>SMTP port
+                <input id="email-port" type="number" min="0" max="65535" step="1" placeholder="587">
+              </label>
+              <label class="inline-checkbox">
+                <input id="email-secure" type="checkbox">
+                <span>Use TLS/secure</span>
+              </label>
+            </div>
+            <label>SMTP username
+              <input id="email-user" autocomplete="username" placeholder="owner@example.com">
+            </label>
+            <label>SMTP password
+              <input id="email-pass" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
+              <span id="email-pass-help" class="field-help"></span>
+            </label>
+            <label>From address
+              <input id="email-from" type="email" autocomplete="email" placeholder="noreply@example.com">
+            </label>
+            <div id="email-test-result" class="notice info" hidden></div>
+            <div class="button-row">
+              <button type="button" id="test-email-config" class="secondary">Test connection</button>
+              <button type="submit" class="primary">Save email</button>
+            </div>
+          </form>
+        </div>
+      </details>
+
+      <details class="settings-group">
+        <summary><span class="group-icon" aria-hidden="true">🔒</span> Admin login</summary>
+        <div class="settings-group-body">
+          <form id="admin-password-form" class="form-stack config-form">
+            <label>Admin username
+              <input id="admin-user" autocomplete="username" required>
+            </label>
+            <label>New admin password
+              <input id="admin-password" type="password" autocomplete="new-password" minlength="6" required>
+            </label>
+            <label>Confirm new password
+              <input id="admin-password-confirm" type="password" autocomplete="new-password" minlength="6" required>
+            </label>
+            <button type="submit" class="secondary full">Change login</button>
+          </form>
+        </div>
+      </details>
     </aside>
 
     <section class="card phone-card" aria-labelledby="phone-title">
@@ -272,6 +315,8 @@
       <div id="messages-list" class="stack-list" aria-live="polite"></div>
     </section>
   </main>
+
+  <footer class="app-footer">AI Secretary — your always-on phone receptionist. Answers calls, books appointments, and takes messages.</footer>
 
   <dialog id="booking-dialog" class="booking-dialog">
     <form id="booking-form" method="dialog" class="form-stack">
