@@ -32,7 +32,7 @@ Fly.io (`fly.toml`) and Railway (`railway.json`) configs are also included for t
 
 ## Requirements for developers
 
-- Node.js >= 22.5.0 for built-in `node:sqlite` support.
+- Node.js >= 22.13.0 for flag-free built-in `node:sqlite` support (earlier 22.x releases require `--experimental-sqlite`).
 - npm.
 - A public HTTPS URL for real Twilio calls.
 - A Twilio account for real phone calls and SMS.

@@ -25,3 +25,34 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ai-secretary:ci .
+
+      - name: Run Docker container
+        run: docker run -d --name ai-secretary-ci -p 3000:3000 ai-secretary:ci
+
+      - name: Smoke test health endpoint
+        run: |
+          for i in {1..15}; do
+            response=$(curl -fsS http://localhost:3000/health || true)
+            if echo "$response" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Waiting for health check ($i/15)..."
+            sleep 2
+          done
+
+          echo "Health check failed; container logs:"
+          docker logs ai-secretary-ci
+          exit 1
+
+      - name: Remove Docker container
+        if: always()
+        run: docker rm -f ai-secretary-ci

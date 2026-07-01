@@ -40,7 +40,8 @@ app.use('/voice', publicLimiter, verifyTwilio, require('./src/voice'));
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 if (require.main === module) {
-  app.listen(config.port, () => {
+  let shuttingDown = false;
+  const server = app.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`AI Secretary running on ${config.publicBaseUrl} (port ${config.port})`);
     try {
@@ -52,6 +53,52 @@ if (require.main === module) {
     reminders.startReminders();
     backups.startBackups();
   });
+
+  function shutdown(signal) {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+
+    // eslint-disable-next-line no-console
+    console.log(`Received ${signal}; shutting down gracefully`);
+
+    const forceExitTimer = setTimeout(() => {
+      // eslint-disable-next-line no-console
+      console.error('Graceful shutdown timed out; forcing exit');
+      process.exit(1);
+    }, 10000);
+    forceExitTimer.unref();
+
+    try {
+      reminders.stopReminders();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to stop reminders:', err);
+    }
+
+    try {
+      backups.stopBackups();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to stop backups:', err);
+    }
+
+    server.close(() => {
+      try {
+        require('./src/db').db.close();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to close database:', err);
+      }
+
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 module.exports = app;

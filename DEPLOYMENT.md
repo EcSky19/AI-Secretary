@@ -182,7 +182,7 @@ docker compose up -d
 
 ### Node.js directly
 
-You need Node.js 22.5 or newer because the app uses the built-in `node:sqlite` module.
+You need Node.js 22.13 or newer because the app uses the built-in `node:sqlite` module without flags. Earlier 22.x releases require `--experimental-sqlite`; Node 23.4+ and 24+ work flag-free.
 
 ```powershell
 Copy-Item .env.example .env
@@ -218,6 +218,6 @@ The browser setup wizard is the normal path. These variables are optional overri
 - **The setup wizard appears again after a restart:** the database is not on persistent storage, or the disk is mounted at the wrong path. On Render, confirm the disk is mounted at `/data` and `DATABASE_PATH` is `/data/secretary.db`.
 - **Calls are not answered:** confirm the app URL opens in a browser, the Twilio number is registered in the app, and Twilio's Voice webhook points to `/voice/incoming` on the public HTTPS site.
 - **The app warns about `usingLocalhost`:** the app thinks its public URL is localhost. That is okay for local testing, but real Twilio calls need a public HTTPS URL. On custom hosts, set `PUBLIC_BASE_URL`.
-- **Render deploy fails with SQLite or Node errors:** the app requires Node.js 22.5 or newer. The included Render config uses Docker with `node:22-slim` to satisfy this.
+- **Render deploy fails with SQLite or Node errors:** the app requires Node.js 22.13 or newer. The included Render config uses Docker with `node:22-slim` to satisfy this.
 - **Appointments disappeared:** stop the app, restore from your latest backup, restart, then check that the host is using persistent disk storage, not temporary storage.
 - **The owner forgot the admin password:** run `node scripts/reset-admin.js newpass1`, then restart the app.
