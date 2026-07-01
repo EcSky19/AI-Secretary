@@ -71,6 +71,11 @@ const els = {
   assistantVoice: document.querySelector('#assistant-voice'),
   assistantVoiceHelp: document.querySelector('#assistant-voice-help'),
   saveAssistantVoice: document.querySelector('#save-assistant-voice'),
+  aiUnderstandingForm: document.querySelector('#ai-understanding-form'),
+  openaiApiKey: document.querySelector('#openai-api-key'),
+  openaiModel: document.querySelector('#openai-model'),
+  aiUnderstandingHelp: document.querySelector('#ai-understanding-help'),
+  saveAiUnderstanding: document.querySelector('#save-ai-understanding'),
   recoveryPhoneForm: document.querySelector('#recovery-phone-form'),
   recoveryPhone: document.querySelector('#recovery-phone'),
   recoveryEmailForm: document.querySelector('#recovery-email-form'),
@@ -329,6 +334,26 @@ function renderConfig() {
     els.assistantVoiceHelp.textContent = config.voiceEnvManaged
       ? `${selectedLabel || 'The assistant voice'}. Set by your hosting configuration.`
       : 'This natural voice is what callers hear when the assistant answers your phone. Changes apply to the next call.';
+  }
+  const aiUnderstanding = config.aiUnderstanding || {};
+  const aiEnvManaged = Boolean(aiUnderstanding.envManaged);
+  if (els.openaiApiKey) {
+    els.openaiApiKey.value = '';
+    els.openaiApiKey.placeholder = aiUnderstanding.hasApiKey ? '•••• configured' : 'sk-...';
+    els.openaiApiKey.disabled = aiEnvManaged;
+  }
+  if (els.openaiModel) {
+    els.openaiModel.value = aiUnderstanding.model || '';
+    els.openaiModel.disabled = aiEnvManaged;
+  }
+  if (els.saveAiUnderstanding) {
+    els.saveAiUnderstanding.disabled = aiEnvManaged;
+  }
+  if (els.aiUnderstandingHelp) {
+    const status = aiUnderstanding.enabled ? 'enabled' : 'disabled';
+    els.aiUnderstandingHelp.textContent = aiEnvManaged
+      ? `AI understanding is ${status}. Configured via OPENAI_API_KEY environment variable.`
+      : `AI understanding is ${status}. ${aiUnderstanding.hasApiKey ? 'A key is configured.' : 'No key is configured.'} When configured, callers' requests are understood by an AI model for more natural, flexible phrasing. Without a key, a built-in rule-based parser is used, so the phone line still works.`;
   }
   if (els.recoveryPhone) els.recoveryPhone.value = config.recoveryPhone || '';
   if (els.recoveryEmail) els.recoveryEmail.value = config.recoveryEmail || '';
@@ -743,6 +768,27 @@ async function saveVoiceConfig() {
   await loadAll();
 }
 
+async function saveAiConfig() {
+  const current = (state.config && state.config.aiUnderstanding) || {};
+  const apiKey = els.openaiApiKey.value.trim();
+  const model = els.openaiModel.value.trim();
+  const changes = {};
+  if (apiKey) changes.apiKey = apiKey;
+  if (model !== (current.model || '')) changes.model = model;
+  if (!Object.keys(changes).length) {
+    showConfigMessage('No AI understanding changes to save.');
+    return;
+  }
+  const result = await api('/api/config/ai', {
+    method: 'PUT',
+    body: JSON.stringify(changes),
+  });
+  if (state.config) state.config.aiUnderstanding = result.aiUnderstanding || {};
+  if (els.openaiApiKey) els.openaiApiKey.value = '';
+  showConfigMessage('AI understanding settings saved.');
+  renderConfig();
+}
+
 async function saveRecoveryPhone() {
   const result = await api('/api/config/recovery-phone', {
     method: 'PUT',
@@ -997,6 +1043,10 @@ els.businessConfigForm.addEventListener('submit', event => {
 els.voiceConfigForm.addEventListener('submit', event => {
   event.preventDefault();
   saveVoiceConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.aiUnderstandingForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveAiConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
 });
 els.recoveryPhoneForm.addEventListener('submit', event => {
   event.preventDefault();

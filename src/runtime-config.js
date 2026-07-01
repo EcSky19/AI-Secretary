@@ -149,6 +149,36 @@ function isVoiceEnvManaged() {
   return Boolean(config.voice.name);
 }
 
+// --- AI understanding (OpenAI natural-language routing) --------------------
+
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+
+// Merge env + DB for the OpenAI credentials that power natural-language route
+// understanding. Env vars win so hosted deploys can pin them; otherwise the
+// business owner can configure it from the dashboard.
+function getOpenAiConfig() {
+  return {
+    apiKey: config.openai.apiKey || db.getSetting('openai_api_key') || '',
+    model: process.env.OPENAI_MODEL || db.getSetting('openai_model') || DEFAULT_OPENAI_MODEL,
+  };
+}
+
+// True when a usable OpenAI key is present (env or dashboard-configured).
+function isAiUnderstandingEnabled() {
+  return Boolean(getOpenAiConfig().apiKey);
+}
+
+// True when the key is pinned via environment variable (dashboard is read-only).
+function isOpenAiEnvManaged() {
+  return Boolean(config.openai.apiKey);
+}
+
+function setOpenAiConfig({ apiKey, model } = {}) {
+  if (apiKey !== undefined) db.setSetting('openai_api_key', String(apiKey || '').trim());
+  if (model !== undefined) db.setSetting('openai_model', String(model || '').trim());
+  notifyChange();
+}
+
 // --- Twilio credentials ----------------------------------------------------
 
 function getTwilioCredentials() {
@@ -300,6 +330,10 @@ module.exports = {
   setVoiceName,
   getVoiceOptions,
   isVoiceEnvManaged,
+  getOpenAiConfig,
+  isAiUnderstandingEnabled,
+  isOpenAiEnvManaged,
+  setOpenAiConfig,
   maskPhone,
   maskEmail,
   isPasswordEnvManaged,

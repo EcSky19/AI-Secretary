@@ -107,6 +107,17 @@
         </label>
         <button type="submit" id="save-assistant-voice" class="secondary full">Save assistant voice</button>
       </form>
+      <form id="ai-understanding-form" class="form-stack config-form">
+        <label>AI understanding (optional)
+          <input id="openai-api-key" type="password" autocomplete="new-password" placeholder="sk-...">
+          <span class="field-help">Leave blank to keep the saved key. Enter a new key to replace it.</span>
+        </label>
+        <label>OpenAI model
+          <input id="openai-model" autocomplete="off" placeholder="gpt-4o-mini">
+          <span id="ai-understanding-help" class="field-help">When configured, callers' requests are understood by an AI model for more natural, flexible phrasing. Without a key, a built-in rule-based parser is used, so the phone line still works.</span>
+        </label>
+        <button type="submit" id="save-ai-understanding" class="secondary full">Save AI understanding</button>
+      </form>
       <form id="recovery-phone-form" class="form-stack config-form">
         <label>Recovery phone (for password reset)
           <input id="recovery-phone" autocomplete="tel" placeholder="+15551234567">

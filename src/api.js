@@ -401,6 +401,16 @@ router.get('/config', asyncHandler((req, res) => {
     voiceName: runtimeConfig.getVoiceName(),
     voiceOptions: runtimeConfig.getVoiceOptions(),
     voiceEnvManaged: runtimeConfig.isVoiceEnvManaged(),
+    aiUnderstanding: (() => {
+      const ai = runtimeConfig.getOpenAiConfig();
+      // Never return the API key; expose only whether one is configured.
+      return {
+        enabled: runtimeConfig.isAiUnderstandingEnabled(),
+        hasApiKey: Boolean(ai.apiKey),
+        model: ai.model,
+        envManaged: runtimeConfig.isOpenAiEnvManaged(),
+      };
+    })(),
     email: (() => {
       const e = runtimeConfig.getEmailConfig();
       // Never return the SMTP password; expose only whether one is set.
@@ -476,6 +486,39 @@ router.put('/config/voice', asyncHandler((req, res) => {
   }
   runtimeConfig.setVoiceName(name);
   res.json({ ok: true, voiceName: runtimeConfig.getVoiceName() });
+}));
+
+router.put('/config/ai', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  if (runtimeConfig.isOpenAiEnvManaged()) {
+    throw httpError(409, 'AI understanding is configured via the OPENAI_API_KEY environment variable and cannot be changed here.');
+  }
+  const update = {};
+  if (body.apiKey !== undefined) {
+    const key = String(body.apiKey || '').trim();
+    if (key && !/^sk-[A-Za-z0-9_-]{10,}$/.test(key)) {
+      throw httpError(400, 'apiKey does not look like a valid OpenAI key.');
+    }
+    update.apiKey = key;
+  }
+  if (body.model !== undefined) {
+    const model = String(body.model || '').trim();
+    if (model && !/^[A-Za-z0-9][A-Za-z0-9._-]{1,60}$/.test(model)) {
+      throw httpError(400, 'model has an invalid format.');
+    }
+    update.model = model;
+  }
+  runtimeConfig.setOpenAiConfig(update);
+  const ai = runtimeConfig.getOpenAiConfig();
+  res.json({
+    ok: true,
+    aiUnderstanding: {
+      enabled: runtimeConfig.isAiUnderstandingEnabled(),
+      hasApiKey: Boolean(ai.apiKey),
+      model: ai.model,
+      envManaged: runtimeConfig.isOpenAiEnvManaged(),
+    },
+  });
 }));
 
 router.put('/config/recovery-email', asyncHandler((req, res) => {

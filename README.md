@@ -6,6 +6,8 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 
 - AI phone answering for real business calls.
 - Natural-sounding neural assistant voice (Amazon Polly Neural), selectable in the dashboard.
+- Natural speech cadence: prompts use SSML so the assistant pauses between sentences instead of rushing.
+- AI route understanding (optional OpenAI): callers can phrase requests naturally ("can you move me to next Tuesday afternoon?"); configurable in the dashboard.
 - Voice booking, rescheduling, cancelling, and message-taking.
 - Browser dashboard for appointments, settings, messages, backups, and CSV exports.
 - SMS confirmations, cancellation notices, and appointment reminders.
@@ -16,7 +18,7 @@ AI Secretary is a phone-scheduling app for non-technical trade businesses such a
 - SQLite-backed schedule storage using built-in `node:sqlite`.
 - Automatic and manual database backups.
 - Security headers and rate limiting for public routes.
-- Rule-based conversation fallback when OpenAI is not configured.
+- Rule-based conversation fallback when OpenAI is not configured, so the phone line always works.
 
 ## Deploy for a real business
 

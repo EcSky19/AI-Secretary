@@ -65,22 +65,82 @@ function ruleBasedParse(speechText) {
   };
 }
 
+// Gather live context so the model can resolve relative references such as
+// "tomorrow", "next Tuesday", or "the same time as last week". Falls back to
+// bare essentials if the database/settings are unavailable.
+function buildContext(extra = {}) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const base = {
+    today,
+    weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
+    currentTime: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    timezoneOffsetMinutes: -now.getTimezoneOffset(),
+  };
+  try {
+    // eslint-disable-next-line global-require
+    const runtime = require('./runtime-config');
+    if (runtime.getBusinessName) base.businessName = runtime.getBusinessName();
+  } catch (_err) {
+    /* optional */
+  }
+  try {
+    // eslint-disable-next-line global-require
+    const db = require('./db');
+    const settings = db.getSettings ? db.getSettings() : null;
+    if (settings) {
+      base.businessHours = { start: settings.businessHoursStart, end: settings.businessHoursEnd };
+      base.appointmentLengthMinutes = settings.appointmentLengthMinutes;
+    }
+  } catch (_err) {
+    /* optional */
+  }
+  if (extra && typeof extra === 'object') {
+    const { flow, name, requestedDate, requestedTime } = extra;
+    if (flow) base.conversationFlow = flow;
+    if (name) base.callerName = name;
+    if (requestedDate) base.requestedDate = requestedDate;
+    if (requestedTime) base.requestedTime = requestedTime;
+  }
+  return base;
+}
+
+function getOpenAiSettings() {
+  try {
+    // eslint-disable-next-line global-require
+    return require('./runtime-config').getOpenAiConfig();
+  } catch (_err) {
+    return { apiKey: config.openai.apiKey, model: config.openai.model };
+  }
+}
+
 async function parseWithOpenAI(speechText, context = {}) {
+  const { apiKey, model } = getOpenAiSettings();
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.openai.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: config.openai.model,
+      model,
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
-          content:
-            'Return strict JSON only with keys intent, date, time, name. intent must be one of book, cancel, check-availability, reschedule, speak-to-human, leave-message, unknown. Dates use YYYY-MM-DD and times use HH:mm when explicitly inferable from the caller. Use null for missing fields.',
+          content: [
+            'You are the phone receptionist for a local trade business (e.g. a plumber or mechanic).',
+            'Classify the caller utterance and extract scheduling details.',
+            'Return strict JSON only with keys: intent, date, time, name.',
+            'intent must be exactly one of: book, cancel, check-availability, reschedule, speak-to-human, leave-message, unknown.',
+            'Resolve relative dates ("today", "tomorrow", "next Monday", "this Friday") against context.today (a YYYY-MM-DD date) and context.weekday.',
+            'date must be an absolute calendar date in YYYY-MM-DD format, or null if the caller did not specify one.',
+            'time must be 24-hour HH:mm, or null. Interpret "afternoon" as 14:00, "morning" as 09:00, and "evening" as 17:00 only when a booking is requested without an exact time.',
+            "name is the caller's full name if they state it, else null.",
+            'Never invent details the caller did not provide; use null for anything unknown.',
+          ].join(' '),
         },
         {
           role: 'user',
@@ -99,10 +159,11 @@ async function parseWithOpenAI(speechText, context = {}) {
 async function parseIntent(speechText, context = {}) {
   const fallback = ruleBasedParse(speechText);
 
-  if (!config.openai.apiKey) return fallback;
+  const { apiKey } = getOpenAiSettings();
+  if (!apiKey) return fallback;
 
   try {
-    const ai = await parseWithOpenAI(speechText, context);
+    const ai = await parseWithOpenAI(speechText, buildContext(context));
     const localDateTime = parseDateTime(speechText);
     return {
       intent: normalizeIntent(ai.intent) || fallback.intent,

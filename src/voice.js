@@ -35,6 +35,37 @@ function sayOptions() {
   return voice ? { voice } : {};
 }
 
+// Render a prompt into a <Say> node as SSML for a more natural cadence.
+// Sentences are wrapped in <s> (Polly inserts a natural pause between them) and
+// an inline "[[pause]]" / "[[pause:600ms]]" token becomes an explicit <break>.
+function speak(sayNode, prompt) {
+  const raw = prompt == null ? '' : String(prompt);
+  if (!raw.trim()) {
+    sayNode.addText(' ');
+    return sayNode;
+  }
+  const segments = raw.split(/(\[\[pause(?::\d+m?s)?\]\])/i);
+  for (const segment of segments) {
+    if (!segment) continue;
+    const pause = segment.match(/^\[\[pause(?::(\d+m?s))?\]\]$/i);
+    if (pause) {
+      sayNode.break({ time: pause[1] || '450ms' });
+      continue;
+    }
+    const sentences = segment.match(/[^.!?]+[.!?]*/g);
+    if (!sentences) {
+      const text = segment.trim();
+      if (text) sayNode.s(text);
+      continue;
+    }
+    for (const sentence of sentences) {
+      const text = sentence.trim();
+      if (text) sayNode.s(text);
+    }
+  }
+  return sayNode;
+}
+
 function gather(response, prompt, action = '/respond') {
   const g = response.gather({
     input: 'speech',
@@ -43,12 +74,12 @@ function gather(response, prompt, action = '/respond') {
     speechTimeout: 'auto',
     timeout: 6,
   });
-  g.say(sayOptions(), prompt);
+  speak(g.say(sayOptions()), prompt);
   response.redirect({ method: 'POST' }, actionUrl('/reprompt'));
 }
 
 function sayAndHangup(response, message) {
-  response.say(sayOptions(), message);
+  speak(response.say(sayOptions()), message);
   response.hangup();
 }
 
