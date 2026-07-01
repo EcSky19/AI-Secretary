@@ -77,9 +77,48 @@
         <label>Reminder lead time (minutes)
           <input id="reminder-lead" type="number" min="1" step="1" required>
         </label>
-        <button type="submit" class="primary full">Save settings</button>
+        <button type="submit" class="primary full">Save schedule settings</button>
       </form>
       <p class="hint">Changing length, hours, open days, or blackout dates refreshes the slot grid immediately.</p>
+
+      <div class="settings-divider"></div>
+      <h2 id="configuration-title">Configuration</h2>
+      <div id="config-message" class="message" role="status" aria-live="polite"></div>
+      <form id="business-config-form" class="form-stack config-form">
+        <label>Business name
+          <input id="config-business-name" maxlength="120" required>
+        </label>
+        <button type="submit" class="secondary full">Save business name</button>
+      </form>
+      <form id="twilio-config-form" class="form-stack config-form">
+        <div id="twilio-status" class="notice info">Loading phone connection…</div>
+        <label>Twilio Account SID
+          <input id="twilio-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+        </label>
+        <label>Twilio Auth Token
+          <input id="twilio-auth-token" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token">
+        </label>
+        <label>Twilio phone number
+          <input id="twilio-phone-number" autocomplete="tel" placeholder="+15551234567">
+        </label>
+        <div id="twilio-test-result" class="notice info" hidden></div>
+        <div class="button-row">
+          <button type="button" id="test-twilio-config" class="secondary">Test connection</button>
+          <button type="submit" class="primary">Save Twilio</button>
+        </div>
+      </form>
+      <form id="admin-password-form" class="form-stack config-form">
+        <label>Admin username
+          <input id="admin-user" autocomplete="username" required>
+        </label>
+        <label>New admin password
+          <input id="admin-password" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <label>Confirm new password
+          <input id="admin-password-confirm" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <button type="submit" class="secondary full">Change login</button>
+      </form>
     </aside>
 
     <section class="card phone-card" aria-labelledby="phone-title">

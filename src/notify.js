@@ -1,15 +1,21 @@
 'use strict';
 
-const config = require('./config');
+const runtimeConfig = require('./runtime-config');
 
 // Lazily-created Twilio REST client (only when credentials are configured).
 let client = null;
 let clientTried = false;
 
+// Rebuild the client when credentials change at runtime.
+runtimeConfig.onCredentialsChange(() => {
+  client = null;
+  clientTried = false;
+});
+
 function getClient() {
   if (clientTried) return client;
   clientTried = true;
-  const { accountSid, authToken } = config.twilio;
+  const { accountSid, authToken } = runtimeConfig.getTwilioCredentials();
   if (accountSid && authToken && accountSid.startsWith('AC')) {
     try {
       // eslint-disable-next-line global-require
@@ -25,7 +31,7 @@ function getClient() {
 
 // Returns true if SMS sending is configured.
 function isSmsEnabled() {
-  return Boolean(getClient() && config.twilio.phoneNumber);
+  return Boolean(getClient() && runtimeConfig.getTwilioCredentials().phoneNumber);
 }
 
 // Send an SMS. If Twilio is not configured, logs the message instead of failing
@@ -35,7 +41,8 @@ async function sendSms(to, body) {
   if (!trimmedTo) return { sent: false, reason: 'no-recipient' };
 
   const c = getClient();
-  if (!c || !config.twilio.phoneNumber) {
+  const from = runtimeConfig.getTwilioCredentials().phoneNumber;
+  if (!c || !from) {
     console.log(`[notify] (SMS disabled) would text ${trimmedTo}: ${body}`);
     return { sent: false, reason: 'not-configured' };
   }
@@ -43,7 +50,7 @@ async function sendSms(to, body) {
   try {
     const message = await c.messages.create({
       to: trimmedTo,
-      from: config.twilio.phoneNumber,
+      from,
       body,
     });
     return { sent: true, sid: message.sid };

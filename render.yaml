@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ai-secretary
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: secretary-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /data/secretary.db
+      - key: TWILIO_VALIDATE_SIGNATURE
+        value: "true"
+      - key: REMINDERS_ENABLED
+        value: "true"

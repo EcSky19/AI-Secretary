@@ -1,211 +1,128 @@
-# AI Secretary deployment
+# Deploy AI Secretary
 
-AI Secretary is a self-hostable Node.js app. It uses Express, CommonJS, Node's built-in `node:sqlite`, and a SQLite database stored in `./data` by default.
+AI Secretary is meant to run on a real public website so Twilio can send phone calls to it. The easiest path below uses Render and does not require command-line work or editing files.
 
-## Requirements
+## What you need first
 
-- Node.js 22.5 or newer. Node 24 is recommended.
-- npm
-- A public HTTPS URL when receiving real Twilio calls.
-- Twilio credentials if registering or buying phone numbers.
+- A GitHub account and a copy of this repository in your GitHub account.
+- A Render account. A paid Render service/disk is recommended for a real business.
+- A Twilio account with a little credit for phone calls, SMS, and buying a number.
+- About 15 minutes.
 
-## Environment
+## Fastest way (recommended): deploy to the cloud with Render
 
-Create a `.env` file in the project root. At minimum, set values like:
+This repository includes `render.yaml`, a Render Blueprint. It tells Render how to run the app, use Node 22 through the included Dockerfile, check `/health`, and store the SQLite appointment database on a persistent disk at `/data/secretary.db`.
 
-```bash
-PORT=3000
-PUBLIC_BASE_URL=https://your-public-host.example.com
-DATABASE_PATH=./data/secretary.db
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=+15551234567
-OPENAI_API_KEY=your_openai_key
-ADMIN_USER=admin
-ADMIN_PASSWORD=choose_a_strong_password
-ADMIN_TOKEN=choose_a_long_random_token
-TWILIO_VALIDATE_SIGNATURE=true
+1. Sign in at [render.com](https://render.com) or create an account.
+2. Put this project in your own GitHub account if it is not already there.
+3. In Render, click **New +**.
+4. Choose **Blueprint**.
+5. Connect GitHub when Render asks.
+6. Pick the GitHub repository for AI Secretary.
+7. Render will read `render.yaml` automatically.
+8. Review the service named **ai-secretary**. Leave the default settings unless you know you need to change them.
+9. Click **Apply** or **Deploy**.
+10. Wait for the build to finish. The first deploy can take several minutes.
+11. Open the public Render URL when it appears.
+12. Follow the setup wizard in your browser.
+
+The setup wizard walks you through the business name, business hours, open days, blackout dates, appointment length, admin login, Twilio connection, and phone number setup. On this Render path, you should not need to use a terminal, edit `.env`, or manually set Twilio webhook URLs.
+
+### What the setup wizard replaces
+
+For most owners, Twilio credentials, the admin password, business hours, open days, blackout dates, and reminder settings can be entered in the browser. Environment variables still exist for technical users who want fixed overrides, but they are not required for the normal Render setup.
+
+## Data persistence and backups
+
+AI Secretary stores appointments, settings, messages, and setup status in a SQLite file. If that file is stored on an ephemeral host disk, the app may look fresh after a restart and your schedule can be lost.
+
+The included `render.yaml` sets:
+
+```text
+DATABASE_PATH=/data/secretary.db
 ```
 
-Never commit `.env`. The app prints booleans for secret-backed configuration with:
+and mounts a persistent Render disk at `/data`, so appointments survive deploys and restarts.
 
-```bash
-npm run config
+Backups are still your responsibility. For a real business, regularly download or snapshot the Render disk, especially before large changes or moving hosts.
+
+## Connecting your phone number
+
+Twilio is the phone company layer. It receives the real call, then sends it to AI Secretary over the internet.
+
+1. Create or sign in to your Twilio account.
+2. Add a little credit so Twilio can buy a number and handle calls/SMS.
+3. Open your deployed AI Secretary website.
+4. Complete the setup wizard's Twilio step.
+5. Either search for and buy a number inside the app, or choose an existing Twilio number you already own.
+6. The app points the number's Voice webhook to your public site automatically.
+
+The webhook is the URL Twilio calls when someone phones your business. It looks like:
+
+```text
+https://your-public-site.example.com/voice/incoming
 ```
 
-For public deployments, set `ADMIN_PASSWORD` and/or `ADMIN_TOKEN` so dashboard `/api` data is not open. Basic auth uses `ADMIN_USER` plus `ADMIN_PASSWORD`; `ADMIN_TOKEN` supports Bearer token access and `?token=` URLs for calendar subscriptions.
+On Render and Railway, the app can detect the public URL automatically. On other hosts, a technical user may need to set `PUBLIC_BASE_URL`.
 
-Keep `TWILIO_VALIDATE_SIGNATURE=true` in production. Set it to `false` only for local testing when Twilio cannot sign requests against your final public URL.
+## Run it on your own computer (advanced)
 
-## Run locally with Node on macOS or Linux
+Local running is useful for technical testing, but Twilio cannot call `localhost` directly. For real phone calls to reach a local computer, you also need a public HTTPS tunnel such as ngrok.
 
-```bash
-cp .env.example .env # if an example file exists; otherwise create .env
-npm install
-npm run seed
-npm start
-```
-
-The server listens on `PORT`, defaulting to `3000`.
-
-## Run locally with Node on Windows PowerShell
+### Docker
 
 ```powershell
-Copy-Item .env.example .env # if an example file exists; otherwise create .env
-npm install
-npm run seed
-npm start
-```
-
-If there is no `.env.example`, create `.env` manually with the settings above.
-
-## Run with Docker
-
-Build and run the production image:
-
-```bash
 docker build -t ai-secretary .
 docker run --env-file .env -p 3000:3000 -v ai-secretary-data:/app/data ai-secretary
 ```
 
-The image stores SQLite data at `/app/data/secretary.db`. Mount a volume to keep the database across container restarts.
+The Docker image uses Node 22 and stores data in `/app/data`. Keep the volume so the database is not deleted.
 
-## Run with Docker Compose
+### Docker Compose
 
-```bash
+```powershell
+Copy-Item .env.example .env
 docker compose build
 docker compose up -d
-docker compose ps
 ```
 
-Compose uses `.env` as `env_file`, maps `${PORT:-3000}:3000`, and persists data in the `secretary-data` named volume.
+`docker-compose.yml` already uses a named volume called `secretary-data`.
 
-To view logs:
+### Node.js directly
 
-```bash
-docker compose logs -f secretary
+You need Node.js 22.5 or newer because the app uses the built-in `node:sqlite` module.
+
+```powershell
+Copy-Item .env.example .env
+npm install
+npm start
 ```
 
-To stop without deleting data:
+Open `http://localhost:3000`. For Twilio testing, run a tunnel such as:
 
-```bash
-docker compose down
-```
-
-## Expose the server publicly
-
-Real Twilio phone calls cannot reach `localhost`. `PUBLIC_BASE_URL` must be a public HTTPS URL that routes to this app. Whenever the public URL changes, update `PUBLIC_BASE_URL` and re-run number registration.
-
-### Option A: ngrok
-
-Start the app locally, then run:
-
-```bash
+```powershell
 ngrok http 3000
 ```
 
-Copy the `https://...ngrok-free.app` URL into `.env`:
+Then use the tunnel's HTTPS URL as `PUBLIC_BASE_URL` and register the Twilio number again.
 
-```bash
-PUBLIC_BASE_URL=https://your-ngrok-url.ngrok-free.app
-```
+## Useful environment variables for technical users
 
-Restart the app and re-register the Twilio number.
+The browser setup wizard is the normal path. These variables are optional overrides or hosting settings:
 
-### Option B: cloudflared tunnel
-
-Start the app locally, then run:
-
-```bash
-cloudflared tunnel --url http://localhost:3000
-```
-
-Set `PUBLIC_BASE_URL` to the generated HTTPS tunnel URL, restart the app, and re-register the Twilio number.
-
-### Option C: cloud or VPS host
-
-Deploy to a host such as Render, Railway, Fly.io, or a VPS. Configure:
-
-- `PORT` to the port expected by the host, or use the default `3000`.
-- `PUBLIC_BASE_URL` to the host's public HTTPS URL.
-- `DATABASE_PATH` to a persistent disk path, or use Docker volume persistence.
-- Twilio and OpenAI environment variables as needed.
-- `ADMIN_PASSWORD` or `ADMIN_TOKEN` to protect the dashboard API on the public internet.
-
-## Register the client phone number
-
-Registering points the Twilio Voice webhook to:
-
-```text
-{PUBLIC_BASE_URL}/voice/incoming
-```
-
-You can register a number in three ways.
-
-### UI Phone panel
-
-Open the web UI, go to the Phone panel, and register an owned Twilio number.
-
-### CLI
-
-List owned numbers:
-
-```bash
-npm run register-number -- --list
-```
-
-Register an owned number:
-
-```bash
-npm run register-number -- --number +15551234567
-```
-
-Register by Twilio SID:
-
-```bash
-npm run register-number -- --sid PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Search available numbers:
-
-```bash
-npm run register-number -- --search --area 415
-```
-
-Buy a number. This may incur Twilio charges:
-
-```bash
-npm run register-number -- --buy +15551234567
-```
-
-### Twilio Console
-
-In the Twilio Console, open the phone number and set the Voice webhook to:
-
-```text
-https://your-public-host.example.com/voice/incoming
-```
-
-Use HTTP `POST`.
-
-## Subscribe to the calendar feed
-
-Booked appointments are published as an iCal feed:
-
-```text
-https://your-public-host.example.com/calendar.ics
-```
-
-Use the dashboard's Subscribe / Export Calendar link or paste the URL into Google, Apple, or Outlook calendar. If `ADMIN_TOKEN` is configured, subscribe with:
-
-```text
-https://your-public-host.example.com/calendar.ics?token=your_admin_token
-```
+| Variable | Use |
+| --- | --- |
+| `DATABASE_PATH` | SQLite file location. Must be on persistent storage in production. |
+| `PUBLIC_BASE_URL` | Public HTTPS URL if your host cannot auto-detect it. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Optional Twilio overrides. Usually entered in the browser wizard. |
+| `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_TOKEN` | Optional admin auth overrides. Usually created in the browser wizard. |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | Optional AI model settings. Without OpenAI, the built-in rule-based fallback can still run. |
+| `TWILIO_VALIDATE_SIGNATURE` | Keep `true` in production. Use `false` only for local tunnel testing if needed. |
 
 ## Troubleshooting
 
-- `PUBLIC_BASE_URL=http://localhost:3000` is fine for local UI testing but will not receive real Twilio calls.
-- Node's built-in `node:sqlite` requires Node.js 22.5 or newer.
-- If the CLI says Twilio is not configured, set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `PUBLIC_BASE_URL` in `.env`.
-- If calls do not arrive, confirm your public URL is HTTPS and reachable, then re-run registration so Twilio has the latest webhook.
-- If the dashboard shows an authentication banner, reload and sign in with `ADMIN_USER` / `ADMIN_PASSWORD`, or use Bearer token access for API clients.
+- **The setup wizard appears again after a restart:** the database is not on persistent storage, or the disk is mounted at the wrong path. On Render, confirm the disk is mounted at `/data` and `DATABASE_PATH` is `/data/secretary.db`.
+- **Calls are not answered:** confirm the app URL opens in a browser, the Twilio number is registered in the app, and Twilio's Voice webhook points to `/voice/incoming` on the public HTTPS site.
+- **The app warns about `usingLocalhost`:** the app thinks its public URL is localhost. That is okay for local testing, but real Twilio calls need a public HTTPS URL. On custom hosts, set `PUBLIC_BASE_URL`.
+- **Render deploy fails with SQLite or Node errors:** the app requires Node.js 22.5 or newer. The included Render config uses Docker with `node:22-slim` to satisfy this.
+- **Appointments disappeared:** restore from your latest disk backup. Then check that the host is using persistent disk storage, not temporary storage.

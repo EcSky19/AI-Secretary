@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up AI Secretary</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="setup-body">
+  <header class="hero setup-hero">
+    <div>
+      <p class="eyebrow">First-run setup</p>
+      <h1>Let’s get your AI Secretary ready</h1>
+      <p class="subtitle">A few friendly questions will set up your schedule, login, and optional phone connection.</p>
+    </div>
+  </header>
+
+  <main class="setup-shell">
+    <ol class="setup-steps" aria-label="Setup progress">
+      <li class="active" data-step-indicator="1">Business</li>
+      <li data-step-indicator="2">Login</li>
+      <li data-step-indicator="3">Phone</li>
+      <li data-step-indicator="4">Finish</li>
+    </ol>
+
+    <div id="setup-message" class="message" role="status" aria-live="polite"></div>
+
+    <section class="card setup-step" data-step="1" aria-labelledby="business-step-title">
+      <p class="eyebrow">Step 1</p>
+      <h2 id="business-step-title">Your business</h2>
+      <p class="muted">Tell us what to put on the schedule. You can change this later.</p>
+      <form id="business-form" class="form-stack">
+        <label>Business name
+          <input id="setup-business-name" autocomplete="organization" maxlength="120" required placeholder="Example Plumbing Co.">
+        </label>
+        <div class="time-pair">
+          <label>When do you usually open?
+            <input id="setup-business-start" type="time" required value="09:00">
+          </label>
+          <label>When do you usually close?
+            <input id="setup-business-end" type="time" required value="17:00">
+          </label>
+        </div>
+        <label>Typical appointment length (minutes)
+          <input id="setup-appointment-length" type="number" min="1" step="1" required value="60">
+          <span class="field-help">For example, use 60 for one-hour visits.</span>
+        </label>
+        <div class="button-row"><button type="submit" class="primary">Next: create login</button></div>
+      </form>
+    </section>
+
+    <section class="card setup-step" data-step="2" aria-labelledby="login-step-title" hidden>
+      <p class="eyebrow">Step 2</p>
+      <h2 id="login-step-title">Create your login</h2>
+      <p class="muted">This protects your schedule, customer messages, and phone settings.</p>
+      <form id="login-form" class="form-stack">
+        <label>Admin username
+          <input id="setup-admin-user" autocomplete="username" required value="admin">
+        </label>
+        <label>Password
+          <input id="setup-admin-password" type="password" autocomplete="new-password" minlength="6" required>
+          <span class="field-help">Use at least 6 characters.</span>
+        </label>
+        <label>Confirm password
+          <input id="setup-admin-confirm" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <div class="button-row">
+          <button type="button" class="secondary" data-back="1">Back</button>
+          <button type="submit" class="primary">Create login</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card setup-step" data-step="3" aria-labelledby="phone-step-title" hidden>
+      <p class="eyebrow">Step 3</p>
+      <h2 id="phone-step-title">Connect your phone <span class="muted">(optional)</span></h2>
+      <p class="muted">AI Secretary uses Twilio for calls and texts. If you already have a Twilio account, enter it below. If not, you can <a href="https://www.twilio.com/" target="_blank" rel="noreferrer">create one with Twilio</a> and come back later.</p>
+      <div class="form-stack">
+        <div class="time-pair">
+          <label>Twilio Account SID
+            <input id="setup-account-sid" autocomplete="off" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+          </label>
+          <label>Twilio Auth Token
+            <input id="setup-auth-token" type="password" autocomplete="new-password">
+          </label>
+        </div>
+        <label>Twilio phone number to use
+          <input id="setup-phone-number" autocomplete="tel" placeholder="+15551234567">
+        </label>
+        <div id="setup-twilio-result" class="notice info" hidden></div>
+        <div class="button-row">
+          <button type="button" id="setup-test-twilio" class="secondary">Test connection</button>
+          <button type="button" id="setup-save-twilio" class="primary">Save Twilio</button>
+        </div>
+      </div>
+
+      <div id="setup-phone-picker" class="phone-search" hidden>
+        <h3>Choose the number customers will call</h3>
+        <p class="muted">Load a number you already own, or search for a new one to buy in Twilio.</p>
+        <div class="form-stack">
+          <div class="button-row phone-load-row"><button type="button" id="setup-load-owned" class="secondary">Load owned numbers</button></div>
+          <label>Owned Twilio numbers
+            <select id="setup-owned-number"><option value="">Load numbers to choose…</option></select>
+          </label>
+          <button type="button" id="setup-register-owned" class="primary full">Register selected number</button>
+        </div>
+        <form id="setup-search-form" class="form-stack phone-search">
+          <div class="time-pair">
+            <label>Area code
+              <input id="setup-area-code" inputmode="numeric" maxlength="10" placeholder="425">
+            </label>
+            <label>Contains
+              <input id="setup-contains" maxlength="20" placeholder="PLUMB">
+            </label>
+          </div>
+          <button type="submit" class="secondary full">Search available numbers</button>
+        </form>
+        <div id="setup-available-results" class="stack-list"></div>
+      </div>
+
+      <div class="button-row setup-final-actions">
+        <button type="button" class="secondary" data-back="2">Back</button>
+        <button type="button" id="skip-phone" class="secondary">Skip for now</button>
+        <button type="button" id="finish-setup" class="primary">Finish setup</button>
+      </div>
+    </section>
+
+    <section class="card setup-step" data-step="4" aria-labelledby="finish-step-title" hidden>
+      <p class="eyebrow">All set</p>
+      <h2 id="finish-step-title">Your AI Secretary is ready</h2>
+      <p id="finish-copy" class="muted">You can now manage appointments from the dashboard.</p>
+      <div id="localhost-warning" class="notice warn" hidden>Heads up: this app is using a localhost URL. Real phone calls need a public URL or hosted deployment; the deployment docs cover this.</div>
+      <p class="button-row setup-final-actions"><a class="primary setup-link-button" href="/">Go to dashboard</a></p>
+    </section>
+  </main>
+
+  <script src="/setup.js"></script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 const config = require('./config');
 const db = require('./db');
+const runtimeConfig = require('./runtime-config');
 
 // ---------------------------------------------------------------------------
 // Twilio phone number management.
@@ -20,10 +21,16 @@ const db = require('./db');
 let client = null;
 let clientTried = false;
 
+// Rebuild the client when credentials change at runtime.
+runtimeConfig.onCredentialsChange(() => {
+  client = null;
+  clientTried = false;
+});
+
 function getClient() {
   if (clientTried) return client;
   clientTried = true;
-  const { accountSid, authToken } = config.twilio;
+  const { accountSid, authToken } = runtimeConfig.getTwilioCredentials();
   if (accountSid && authToken && accountSid.startsWith('AC')) {
     try {
       // eslint-disable-next-line global-require
@@ -55,7 +62,11 @@ function getStatusCallbackUrl() {
 // The number clients should call, persisted in settings (falls back to the
 // TWILIO_PHONE_NUMBER env value if nothing has been registered yet).
 function getActiveNumber() {
-  return db.getSetting('client_phone_number') || config.twilio.phoneNumber || '';
+  return (
+    db.getSetting('client_phone_number') ||
+    runtimeConfig.getTwilioCredentials().phoneNumber ||
+    ''
+  );
 }
 
 function getActiveNumberSid() {

@@ -8,6 +8,8 @@ const state = {
   messages: [],
   unreadCount: 0,
   phone: null,
+  config: null,
+  setupStatus: null,
   phoneNumbers: [],
   availableNumbers: [],
 };
@@ -59,6 +61,22 @@ const els = {
   phoneAreaCode: document.querySelector('#phone-area-code'),
   phoneContains: document.querySelector('#phone-contains'),
   availablePhoneResults: document.querySelector('#available-phone-results'),
+  dashboardTitle: document.querySelector('#dashboard-title'),
+  pageTitle: document.querySelector('#page-title'),
+  businessConfigForm: document.querySelector('#business-config-form'),
+  configBusinessName: document.querySelector('#config-business-name'),
+  configMessage: document.querySelector('#config-message'),
+  twilioConfigForm: document.querySelector('#twilio-config-form'),
+  twilioStatus: document.querySelector('#twilio-status'),
+  twilioAccountSid: document.querySelector('#twilio-account-sid'),
+  twilioAuthToken: document.querySelector('#twilio-auth-token'),
+  twilioPhoneNumber: document.querySelector('#twilio-phone-number'),
+  twilioTestResult: document.querySelector('#twilio-test-result'),
+  testTwilioConfig: document.querySelector('#test-twilio-config'),
+  adminPasswordForm: document.querySelector('#admin-password-form'),
+  adminUser: document.querySelector('#admin-user'),
+  adminPassword: document.querySelector('#admin-password'),
+  adminPasswordConfirm: document.querySelector('#admin-password-confirm'),
 };
 
 function todayLocalDate() {
@@ -148,10 +166,31 @@ function friendlyError(err) {
 }
 
 function showMessage(text, type = 'success') {
-  els.message.textContent = text;
-  els.message.className = `message show ${type}`;
-  clearTimeout(showMessage.timer);
-  showMessage.timer = setTimeout(() => { els.message.className = 'message'; }, 5000);
+  showInlineMessage(els.message, text, type);
+}
+
+function showConfigMessage(text, type = 'success') {
+  showInlineMessage(els.configMessage, text, type);
+}
+
+function showInlineMessage(element, text, type = 'success') {
+  if (!element) return;
+  element.textContent = text;
+  element.className = `message show ${type}`;
+  clearTimeout(element.messageTimer);
+  element.messageTimer = setTimeout(() => { element.className = 'message'; }, 5000);
+}
+
+function renderNotice(element, result) {
+  if (!element) return;
+  element.hidden = false;
+  if (result && result.ok) {
+    element.className = 'notice good';
+    element.textContent = `Connection works${result.friendlyName ? ` - ${result.friendlyName}` : ''}.`;
+    return;
+  }
+  element.className = 'notice error';
+  element.textContent = result && result.error ? result.error : 'Connection test failed.';
 }
 
 function dayBounds(date) {
@@ -192,6 +231,27 @@ function renderSettings() {
   const openDays = Array.isArray(state.settings.openDays) ? state.settings.openDays : [0, 1, 2, 3, 4, 5, 6];
   els.openDays.forEach(input => { input.checked = openDays.includes(Number(input.value)); });
   renderBlackoutDates();
+}
+
+function renderConfig() {
+  const config = state.config || {};
+  const businessName = config.businessName || (state.setupStatus && state.setupStatus.businessName) || 'AI Secretary';
+  if (els.dashboardTitle) els.dashboardTitle.textContent = `${businessName} - Schedule`;
+  if (els.pageTitle) els.pageTitle.textContent = `${businessName} - Schedule`;
+  if (els.configBusinessName) els.configBusinessName.value = businessName;
+  if (els.adminUser) els.adminUser.value = config.adminUser || 'admin';
+  if (els.twilioAccountSid) els.twilioAccountSid.value = config.twilioAccountSid || '';
+  if (els.twilioPhoneNumber) els.twilioPhoneNumber.value = config.smsFromNumber || '';
+  if (els.twilioAuthToken) els.twilioAuthToken.value = '';
+  if (els.twilioStatus) {
+    const configured = Boolean(config.twilioConfigured);
+    els.twilioStatus.className = `notice ${configured ? 'good' : 'warn'}`;
+    const tokenText = config.hasAuthToken ? 'Auth token saved' : 'Auth token not saved';
+    const numberText = config.smsFromNumber ? `SMS/caller number: ${config.smsFromNumber}` : 'No phone number saved yet';
+    els.twilioStatus.textContent = configured
+      ? `Twilio is connected. ${tokenText}. ${numberText}.`
+      : `Twilio is not connected yet. ${tokenText}. ${numberText}.`;
+  }
 }
 
 function renderBlackoutDates() {
@@ -301,7 +361,7 @@ function renderPhone() {
   const statusClass = phone.registered ? 'good' : 'warn';
   const configuredNotice = phone.configured
     ? ''
-    : '<div class="notice info">Twilio not configured. Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to your .env to enable phone calls.</div>';
+    : '<div class="notice info">Twilio is not connected yet. Add your Twilio credentials in Configuration to enable phone calls.</div>';
   const localhostNotice = phone.configured && phone.usingLocalhost
     ? '<div class="notice warn">PUBLIC_BASE_URL is localhost, so clients cannot reach this webhook. Use a tunnel such as ngrok or set a public URL.</div>'
     : '';
@@ -357,23 +417,32 @@ function renderAvailablePhoneNumbers() {
 }
 
 async function loadAll() {
+  state.config = await api('/api/config');
+  renderConfig();
   state.settings = await api('/api/settings');
   renderSettings();
   const { from, to } = dayBounds(els.date.value);
-  const [availability, appointments, upcoming, messages, unread, phone] = await Promise.all([
+  const [availability, appointments, upcoming, messages, unread] = await Promise.all([
     api(`/api/availability?date=${encodeURIComponent(els.date.value)}`),
     api(`/api/appointments?status=booked&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
     api(`/api/appointments?status=booked&from=${encodeURIComponent(currentLocalStamp())}`),
     api(`/api/messages?status=${encodeURIComponent(els.messageFilter.value || 'all')}`),
     api('/api/messages/unread-count'),
-    api('/api/phone'),
   ]);
   state.availableSlots = availability;
   state.appointments = appointments;
   state.upcoming = upcoming;
   state.messages = messages;
   state.unreadCount = unread.count || 0;
-  state.phone = phone;
+  try {
+    state.phone = await api('/api/phone');
+  } catch (err) {
+    state.phone = {
+      configured: false,
+      activeNumber: state.config.smsFromNumber || '',
+      error: err.status === 503 ? 'Connect Twilio in Configuration before registering a phone number.' : friendlyError(err),
+    };
+  }
   renderSchedule();
   renderUpcoming();
   renderMessages();
@@ -468,6 +537,75 @@ async function provisionPhoneNumber(phoneNumber) {
   state.availableNumbers = [];
   renderAvailablePhoneNumbers();
   await loadAll();
+}
+
+async function saveBusinessConfig() {
+  state.config = await api('/api/config/business', {
+    method: 'PUT',
+    body: JSON.stringify({ businessName: els.configBusinessName.value.trim() }),
+  });
+  showConfigMessage('Business name saved.');
+  await loadAll();
+}
+
+async function testTwilioConfig() {
+  const body = {};
+  if (els.twilioAccountSid.value.trim()) body.accountSid = els.twilioAccountSid.value.trim();
+  if (els.twilioAuthToken.value.trim()) body.authToken = els.twilioAuthToken.value;
+  const result = await api('/api/config/twilio/test', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  renderNotice(els.twilioTestResult, result);
+}
+
+async function saveTwilioConfig() {
+  const body = {
+    accountSid: els.twilioAccountSid.value.trim(),
+    phoneNumber: els.twilioPhoneNumber.value.trim(),
+  };
+  if (els.twilioAuthToken.value.trim()) body.authToken = els.twilioAuthToken.value;
+  const result = await api('/api/config/twilio', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (result.test) renderNotice(els.twilioTestResult, result.test);
+  showConfigMessage(result.twilioConfigured ? 'Twilio settings saved and connected.' : 'Twilio settings saved.');
+  await loadAll();
+}
+
+async function changeAdminPassword() {
+  const password = els.adminPassword.value;
+  if (password !== els.adminPasswordConfirm.value) {
+    showConfigMessage('Passwords do not match.', 'error');
+    return;
+  }
+  await api('/api/config/admin-password', {
+    method: 'PUT',
+    body: JSON.stringify({ password, user: els.adminUser.value.trim() || 'admin' }),
+  });
+  els.adminPassword.value = '';
+  els.adminPasswordConfirm.value = '';
+  showConfigMessage('Admin login updated. Reload the page if your browser asks you to sign in again.');
+  await loadAll();
+}
+
+async function initialize() {
+  try {
+    state.setupStatus = await api('/api/setup/status');
+    if (!state.setupStatus.setupComplete) {
+      window.location.replace('/setup.html');
+      return;
+    }
+    if (state.setupStatus.businessName && els.dashboardTitle) {
+      els.dashboardTitle.textContent = `${state.setupStatus.businessName} - Schedule`;
+    }
+    els.calendarUrl.value = `${window.location.origin}/calendar.ics`;
+    els.date.value = todayLocalDate();
+    await loadAll();
+  } catch (err) {
+    showMessage(friendlyError(err), 'error');
+  }
 }
 
 els.date.addEventListener('change', () => loadAll().catch(err => showMessage(err.message, 'error')));
@@ -604,10 +742,21 @@ els.closeReschedule.addEventListener('click', () => els.rescheduleDialog.close()
 els.cancelReschedule.addEventListener('click', () => els.rescheduleDialog.close());
 els.messageFilter.addEventListener('change', () => loadAll().catch(err => showMessage(friendlyError(err), 'error')));
 els.dismissAuthBanner.addEventListener('click', () => { els.authBanner.hidden = true; });
+els.businessConfigForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveBusinessConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.testTwilioConfig.addEventListener('click', () => testTwilioConfig().catch(err => renderNotice(els.twilioTestResult, { ok: false, error: friendlyError(err) })));
+els.twilioConfigForm.addEventListener('submit', event => {
+  event.preventDefault();
+  saveTwilioConfig().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
+els.adminPasswordForm.addEventListener('submit', event => {
+  event.preventDefault();
+  changeAdminPassword().catch(err => showConfigMessage(friendlyError(err), 'error'));
+});
 
-els.calendarUrl.value = `${window.location.origin}/calendar.ics`;
-els.date.value = todayLocalDate();
-loadAll().catch(err => showMessage(friendlyError(err), 'error'));
+initialize();
 setInterval(() => {
   api('/api/messages/unread-count').then(({ count }) => {
     state.unreadCount = count || 0;

@@ -25,6 +25,7 @@ function removeIfExists(filePath) {
 }
 
 after(() => {
+  require('../src/db').db.close();
   removeIfExists(testDbPath);
   removeIfExists(`${testDbPath}-wal`);
   removeIfExists(`${testDbPath}-shm`);

@@ -1,12 +1,17 @@
 'use strict';
 
 const config = require('./config');
+const runtimeConfig = require('./runtime-config');
 
 // Whether Twilio request-signature validation should run. Requires an auth
-// token and the feature flag (on by default, disabled in tests via
-// TWILIO_VALIDATE_SIGNATURE=false).
+// token (from env or runtime config) and the feature flag (on by default,
+// disabled in tests via TWILIO_VALIDATE_SIGNATURE=false).
+function getAuthToken() {
+  return runtimeConfig.getTwilioCredentials().authToken;
+}
+
 function isVerifyEnabled() {
-  return Boolean(config.twilio.authToken && config.twilio.validateSignature);
+  return Boolean(getAuthToken() && config.twilio.validateSignature);
 }
 
 // Reconstruct the absolute URL Twilio used to reach us. Honours the configured
@@ -37,7 +42,7 @@ function verifyTwilio(req, res, next) {
   const url = buildRequestUrl(req);
   const params = req.body && typeof req.body === 'object' ? req.body : {};
 
-  if (signature && validateRequest(config.twilio.authToken, signature, url, params)) {
+  if (signature && validateRequest(getAuthToken(), signature, url, params)) {
     return next();
   }
 

@@ -5,6 +5,7 @@ const db = require('./db');
 const notify = require('./notify');
 const scheduling = require('./scheduling');
 const twilioNumbers = require('./twilio-numbers');
+const runtimeConfig = require('./runtime-config');
 
 const router = express.Router();
 
@@ -352,6 +353,69 @@ router.post('/phone/provision', asyncHandler(async (req, res) => {
   } catch (err) {
     mapTwilioNumberError(err);
   }
+}));
+
+// --- Runtime configuration (authenticated) --------------------------------
+
+router.get('/config', asyncHandler((req, res) => {
+  const creds = runtimeConfig.getTwilioCredentials();
+  res.json({
+    businessName: runtimeConfig.getBusinessName(),
+    adminUser: runtimeConfig.getAdminUser(),
+    twilioConfigured: runtimeConfig.isTwilioConfigured(),
+    // Never return the auth token; expose only a masked hint.
+    twilioAccountSid: creds.accountSid,
+    smsFromNumber: creds.phoneNumber,
+    hasAuthToken: Boolean(creds.authToken),
+    setup: runtimeConfig.getSetupStatus(),
+  });
+}));
+
+router.put('/config/business', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  const name = typeof body.businessName === 'string' ? body.businessName.trim() : '';
+  if (!name) throw httpError(400, 'businessName is required.');
+  runtimeConfig.setBusinessName(name);
+  res.json({ ok: true, businessName: runtimeConfig.getBusinessName() });
+}));
+
+router.put('/config/twilio', asyncHandler(async (req, res) => {
+  const body = requireBody(req);
+  const accountSid = body.accountSid !== undefined ? String(body.accountSid).trim() : undefined;
+  const authToken = body.authToken !== undefined ? String(body.authToken).trim() : undefined;
+  const phoneNumber = body.phoneNumber !== undefined ? String(body.phoneNumber).trim() : undefined;
+
+  if (accountSid !== undefined && accountSid && !accountSid.startsWith('AC')) {
+    throw httpError(400, 'accountSid must start with "AC".');
+  }
+
+  runtimeConfig.setTwilioCredentials({ accountSid, authToken, phoneNumber });
+
+  // Verify the saved credentials so the UI can show a clear success/failure.
+  const result = body.test === false ? { ok: null } : await runtimeConfig.testTwilioCredentials();
+  res.json({
+    ok: true,
+    twilioConfigured: runtimeConfig.isTwilioConfigured(),
+    test: result,
+  });
+}));
+
+router.post('/config/twilio/test', asyncHandler(async (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const creds =
+    body.accountSid && body.authToken
+      ? { accountSid: String(body.accountSid).trim(), authToken: String(body.authToken).trim() }
+      : undefined;
+  res.json(await runtimeConfig.testTwilioCredentials(creds));
+}));
+
+router.put('/config/admin-password', asyncHandler((req, res) => {
+  const body = requireBody(req);
+  const password = String(body.password || '');
+  if (password.length < 6) throw httpError(400, 'password must be at least 6 characters.');
+  const user = body.user !== undefined ? String(body.user).trim() || 'admin' : undefined;
+  runtimeConfig.setAdminCredentials({ user, password });
+  res.json({ ok: true });
 }));
 
 router.use((err, req, res, next) => {

@@ -1,11 +1,14 @@
 'use strict';
 
 const config = require('./config');
+const runtimeConfig = require('./runtime-config');
 
-// True when any admin credential is configured. When nothing is set the API
-// stays open, which keeps local development and the existing tests frictionless.
+// True when any admin credential is configured (env password/token or a
+// password set through the onboarding wizard and stored in the database). When
+// nothing is set the API stays open, which keeps local development and the
+// existing tests frictionless.
 function isAuthEnabled() {
-  return Boolean(config.admin.password || config.admin.token);
+  return runtimeConfig.isAuthConfigured();
 }
 
 function timingSafeEqual(a, b) {
@@ -33,7 +36,7 @@ function checkBasic(header) {
   if (idx === -1) return false;
   const user = decoded.slice(0, idx);
   const pass = decoded.slice(idx + 1);
-  return timingSafeEqual(user, config.admin.user) && timingSafeEqual(pass, config.admin.password);
+  return runtimeConfig.verifyAdminLogin(user, pass);
 }
 
 function checkBearer(header) {
@@ -51,7 +54,7 @@ function adminAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const queryToken = req.query && req.query.token;
 
-  if (config.admin.password && checkBasic(header)) return next();
+  if (checkBasic(header)) return next();
   if (config.admin.token && (checkBearer(header) || timingSafeEqual(queryToken, config.admin.token))) {
     return next();
   }

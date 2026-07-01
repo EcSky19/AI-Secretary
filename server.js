@@ -13,6 +13,9 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // Twilio posts urlencoded
 
+// Public onboarding endpoints (before auth so a fresh install can be set up).
+app.use('/api/setup', require('./src/setup'));
+
 // iCal feed (served before static/auth so calendar clients can subscribe).
 app.use('/calendar.ics', require('./src/ical-route'));
 
